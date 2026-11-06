@@ -1,0 +1,287 @@
+From 1486e2b6eaa7accafd68eff325e84b3e74e9d04b Mon Sep 17 00:00:00 2001
+From: Daniel King <dan@spiraldb.com>
+Date: Fri, 6 Nov 2026 13:05:38 -0500
+Subject: [PATCH 10/22] Account for background decode CPU through consumer
+ cancellation
+
+---
+ crates/iceberg/public-api.txt                 |  1 +
+ crates/iceberg/src/arrow/reader/background.rs | 60 +++++++++++++++++--
+ crates/iceberg/src/arrow/reader/mod.rs        | 16 +++++
+ crates/iceberg/src/arrow/reader/pipeline.rs   |  9 ++-
+ crates/integrations/datafusion/src/scan.rs    |  9 +--
+ 5 files changed, 81 insertions(+), 14 deletions(-)
+
+diff --git a/crates/iceberg/public-api.txt b/crates/iceberg/public-api.txt
+index 05079aa77daf72a1248766f79a2e9daef34ec444..ac759012ecd2f3df0a49c6efe1f8007cab525ec0 100644
+--- a/crates/iceberg/public-api.txt
++++ b/crates/iceberg/public-api.txt
+@@ -74,6 +74,7 @@ pub fn iceberg::arrow::ArrowReaderBuilder::new(file_io: iceberg::io::FileIO, run
+ pub fn iceberg::arrow::ArrowReaderBuilder::with_background_reads(self, background_reads: bool) -> Self
+ pub fn iceberg::arrow::ArrowReaderBuilder::with_batch_size(self, batch_size: usize) -> Self
+ pub fn iceberg::arrow::ArrowReaderBuilder::with_bloom_filter_enabled(self, bloom_filter_enabled: bool) -> Self
++pub fn iceberg::arrow::ArrowReaderBuilder::with_compute_time_observer<F>(self, observer: F) -> Self where F: core::ops::function::Fn(core::time::Duration) + core::marker::Send + core::marker::Sync + 'static
+ pub fn iceberg::arrow::ArrowReaderBuilder::with_data_file_concurrency_limit(self, val: usize) -> Self
+ pub fn iceberg::arrow::ArrowReaderBuilder::with_metadata_size_hint(self, metadata_size_hint: usize) -> Self
+ pub fn iceberg::arrow::ArrowReaderBuilder::with_range_coalesce_bytes(self, range_coalesce_bytes: u64) -> Self
+diff --git a/crates/iceberg/src/arrow/reader/background.rs b/crates/iceberg/src/arrow/reader/background.rs
+index e22154be528a73e179af73dc5bd3134a55ce8cca..9b93fdbd146d14876dcae54db65f50c3a0a41077 100644
+--- a/crates/iceberg/src/arrow/reader/background.rs
++++ b/crates/iceberg/src/arrow/reader/background.rs
+@@ -25,6 +25,7 @@ use futures::future::{AbortHandle, Abortable, Aborted, poll_fn};
+ use futures::{Stream, StreamExt};
+ use tokio::sync::mpsc;
+ 
++use super::ComputeTimeObserver;
+ use crate::arrow::ScanMetrics;
+ use crate::runtime::{JoinHandle, Runtime};
+ use crate::scan::ArrowRecordBatchStream;
+@@ -34,6 +35,7 @@ pub(super) fn read_in_background(
+     mut input: ArrowRecordBatchStream,
+     runtime: &Runtime,
+     metrics: ScanMetrics,
++    observer: Option<ComputeTimeObserver>,
+ ) -> ArrowRecordBatchStream {
+     let (sender, receiver) = mpsc::channel(2);
+     let (abort, registration) = AbortHandle::new_pair();
+@@ -47,7 +49,11 @@ pub(super) fn read_in_background(
+                     let _entered = io_runtime.enter();
+                     input.poll_next_unpin(cx)
+                 };
+-                metrics.record_elapsed_compute(start.elapsed());
++                let elapsed = start.elapsed();
++                metrics.record_elapsed_compute(elapsed);
++                if let Some(observer) = &observer {
++                    observer(elapsed);
++                }
+                 poll
+             })
+             .await;
+@@ -111,8 +117,8 @@ impl Drop for BackgroundRead {
+ #[cfg(test)]
+ mod tests {
+     use std::pin::Pin;
+-    use std::sync::Arc;
+     use std::sync::atomic::{AtomicUsize, Ordering};
++    use std::sync::{Arc, mpsc};
+     use std::task::Poll;
+     use std::time::Duration;
+ 
+@@ -157,9 +163,19 @@ mod tests {
+             Poll::Ready(Some(Ok(batch())))
+         });
+         let metrics = ScanMetrics::new();
+-        let output = read_in_background(Box::pin(input), &Runtime::current(), metrics.clone());
++        let observed = Arc::new(AtomicUsize::new(0));
++        let observed_polls = observed.clone();
++        let output = read_in_background(
++            Box::pin(input),
++            &Runtime::current(),
++            metrics.clone(),
++            Some(Arc::new(move |_| {
++                observed_polls.fetch_add(1, Ordering::Relaxed);
++            })),
++        );
+         prefetch_done.await.unwrap();
+         assert_eq!(produced.load(Ordering::Relaxed), 3);
++        assert_eq!(observed.load(Ordering::Relaxed), 3);
+         assert!(metrics.elapsed_compute_nanos() > 0);
+         drop(output);
+         tokio::time::timeout(Duration::from_secs(1), drop_done)
+@@ -173,12 +189,46 @@ mod tests {
+         let input: ArrowRecordBatchStream = Box::pin(stream::poll_fn(|_| {
+             panic!("background read panic");
+         }));
+-        let mut output = read_in_background(input, &Runtime::current(), ScanMetrics::new());
++        let mut output = read_in_background(input, &Runtime::current(), ScanMetrics::new(), None);
+         let error = output.next().await.unwrap().unwrap_err();
+         assert!(error.to_string().contains("background read panic"));
+         assert!(output.next().await.is_none());
+     }
+ 
++    #[test]
++    fn background_compute_observer_reports_in_flight_poll_after_consumer_drop() {
++        let io = Builder::new_current_thread().enable_all().build().unwrap();
++        let cpu = Builder::new_multi_thread()
++            .worker_threads(1)
++            .build()
++            .unwrap();
++        let (started, start_done) = mpsc::channel();
++        let (release, released) = mpsc::channel();
++        let (observed, observation) = mpsc::channel();
++        let input = stream::poll_fn(move |_| {
++            started.send(()).unwrap();
++            released.recv().unwrap();
++            Poll::Ready(Some(Ok(batch())))
++        });
++        let metrics = ScanMetrics::new();
++        let output = read_in_background(
++            Box::pin(input),
++            &Runtime::new_with_split(&io, &cpu),
++            metrics.clone(),
++            Some(Arc::new(move |elapsed| {
++                let _ = observed.send(elapsed);
++            })),
++        );
++        start_done.recv_timeout(Duration::from_secs(1)).unwrap();
++        drop(output);
++        release.send(()).unwrap();
++        let elapsed = observation.recv_timeout(Duration::from_secs(1)).unwrap();
++        assert_eq!(
++            elapsed.as_nanos(),
++            u128::from(metrics.elapsed_compute_nanos())
++        );
++    }
++
+     #[test]
+     fn background_reads_use_io_driver_from_compute_workers() {
+         let io = Builder::new_current_thread().enable_all().build().unwrap();
+@@ -197,6 +247,7 @@ mod tests {
+             Box::pin(input),
+             &Runtime::new_with_split(&io, &cpu),
+             metrics.clone(),
++            None,
+         );
+         let batches: Vec<_> = io.block_on(output.try_collect()).unwrap();
+         assert_eq!(batches, vec![batch()]);
+@@ -207,6 +258,7 @@ mod tests {
+             input,
+             &Runtime::new_with_split(&io, &cpu),
+             ScanMetrics::new(),
++            None,
+         );
+         drop(cpu);
+         let error = io
+diff --git a/crates/iceberg/src/arrow/reader/mod.rs b/crates/iceberg/src/arrow/reader/mod.rs
+index 14093b3ac471b3898b127e07bcd0b09dc3aa60bd..15a6fecb8ab784f85520227ee8536baf2eff8ed3 100644
+--- a/crates/iceberg/src/arrow/reader/mod.rs
++++ b/crates/iceberg/src/arrow/reader/mod.rs
+@@ -17,6 +17,9 @@
+ 
+ //! Parquet file data reader
+ 
++use std::sync::Arc;
++use std::time::Duration;
++
+ use crate::arrow::caching_delete_file_loader::CachingDeleteFileLoader;
+ use crate::io::FileIO;
+ use crate::runtime::Runtime;
+@@ -34,6 +37,8 @@ const DEFAULT_RANGE_FETCH_CONCURRENCY: usize = 10;
+ /// Matches DataFusion's default `ParquetOptions::metadata_size_hint`.
+ const DEFAULT_METADATA_SIZE_HINT: usize = 512 * 1024;
+ 
++type ComputeTimeObserver = Arc<dyn Fn(Duration) + Send + Sync>;
++
+ mod background;
+ mod file_reader;
+ mod options;
+@@ -64,6 +69,7 @@ pub struct ArrowReaderBuilder {
+     parquet_read_options: ParquetReadOptions,
+     runtime: Runtime,
+     background_reads: bool,
++    compute_time_observer: Option<ComputeTimeObserver>,
+ }
+ 
+ impl ArrowReaderBuilder {
+@@ -81,6 +87,7 @@ impl ArrowReaderBuilder {
+             parquet_read_options: ParquetReadOptions::builder().build(),
+             runtime,
+             background_reads: false,
++            compute_time_observer: None,
+         }
+     }
+ 
+@@ -103,6 +110,13 @@ impl ArrowReaderBuilder {
+         self
+     }
+ 
++    /// Observes the duration of each background reader poll on its producer thread.
++    pub fn with_compute_time_observer<F>(mut self, observer: F) -> Self
++    where F: Fn(Duration) + Send + Sync + 'static {
++        self.compute_time_observer = Some(Arc::new(observer));
++        self
++    }
++
+     /// Determines whether to enable row group filtering.
+     pub fn with_row_group_filtering_enabled(mut self, row_group_filtering_enabled: bool) -> Self {
+         self.row_group_filtering_enabled = row_group_filtering_enabled;
+@@ -172,6 +186,7 @@ impl ArrowReaderBuilder {
+             bloom_filter_enabled: self.bloom_filter_enabled,
+             parquet_read_options: self.parquet_read_options,
+             background_runtime: self.background_reads.then_some(self.runtime),
++            compute_time_observer: self.compute_time_observer,
+         }
+     }
+ }
+@@ -191,4 +206,5 @@ pub struct ArrowReader {
+     bloom_filter_enabled: bool,
+     parquet_read_options: ParquetReadOptions,
+     background_runtime: Option<Runtime>,
++    compute_time_observer: Option<ComputeTimeObserver>,
+ }
+diff --git a/crates/iceberg/src/arrow/reader/pipeline.rs b/crates/iceberg/src/arrow/reader/pipeline.rs
+index 6f10ed9ad97cc39cbe9122aa7b9f2bc92d0dcc09..3a86098daa9781205a2099ce9dee7e808b101a11 100644
+--- a/crates/iceberg/src/arrow/reader/pipeline.rs
++++ b/crates/iceberg/src/arrow/reader/pipeline.rs
+@@ -105,9 +105,12 @@ impl ArrowReader {
+         };
+ 
+         let stream = match self.background_runtime {
+-            Some(runtime) => {
+-                super::background::read_in_background(stream, &runtime, scan_metrics.clone())
+-            }
++            Some(runtime) => super::background::read_in_background(
++                stream,
++                &runtime,
++                scan_metrics.clone(),
++                self.compute_time_observer,
++            ),
+             None => stream,
+         };
+         Ok(ScanResult::new(stream, scan_metrics))
+diff --git a/crates/integrations/datafusion/src/scan.rs b/crates/integrations/datafusion/src/scan.rs
+index b2ed9138e83cbb2eb6f2f0177816774b93927be0..02f3c2e4209fc7a234becbc0b827875a24f91952 100644
+--- a/crates/integrations/datafusion/src/scan.rs
++++ b/crates/integrations/datafusion/src/scan.rs
+@@ -17,7 +17,6 @@
+ 
+ use std::fmt;
+ use std::sync::Arc;
+-use std::time::Duration;
+ 
+ use datafusion::arrow::datatypes::SchemaRef;
+ use datafusion::common::stats::Precision;
+@@ -176,19 +175,20 @@ impl ExecutionPlan for IcebergScan {
+             })?
+             .clone();
+         let baseline = BaselineMetrics::new(&self.metrics, partition);
++        let compute = baseline.elapsed_compute().clone();
+         let native = self
+             .table
+             .reader_builder()
+             .with_batch_size(self.batch_size)
+             .with_data_file_concurrency_limit(1)
+             .with_background_reads(true)
++            .with_compute_time_observer(move |elapsed| compute.add_duration(elapsed))
+             .build()
+             .read(futures::stream::iter(tasks.into_iter().map(Ok)).boxed())
+             .map_err(external)?;
+         let io_metrics = native.metrics().clone();
+         let bytes = MetricBuilder::new(&self.metrics).counter("bytes_scanned", partition);
+         let mut bytes_recorded = 0;
+-        let mut compute_recorded = 0;
+         let mut input = native.stream().map_err(external);
+         let stream = futures::stream::poll_fn(move |cx| {
+             let timer = baseline.elapsed_compute().timer();
+@@ -197,11 +197,6 @@ impl ExecutionPlan for IcebergScan {
+             let bytes_read = io_metrics.bytes_read();
+             bytes.add((bytes_read - bytes_recorded) as usize);
+             bytes_recorded = bytes_read;
+-            let compute = io_metrics.elapsed_compute_nanos();
+-            baseline
+-                .elapsed_compute()
+-                .add_duration(Duration::from_nanos(compute - compute_recorded));
+-            compute_recorded = compute;
+             baseline.record_poll(poll)
+         });
+         Ok(Box::pin(RecordBatchStreamAdapter::new(

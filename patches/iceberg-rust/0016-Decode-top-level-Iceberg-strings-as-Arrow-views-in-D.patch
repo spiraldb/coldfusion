@@ -1,0 +1,924 @@
+From f125ab6449dbceb58ca125c980c40b522ad3e90a Mon Sep 17 00:00:00 2001
+From: Daniel King <dan@spiraldb.com>
+Date: Fri, 6 Nov 2026 14:28:12 -0500
+Subject: [PATCH 16/22] Decode top-level Iceberg strings as Arrow views in
+ DataFusion
+
+---
+ crates/iceberg/public-api.txt                 |   2 +
+ crates/iceberg/src/arrow/reader/mod.rs        |  10 +
+ crates/iceberg/src/arrow/reader/pipeline.rs   |  17 +-
+ .../src/arrow/record_batch_transformer.rs     |  60 ++++--
+ crates/iceberg/src/arrow/schema.rs            |  67 ++++++
+ crates/iceberg/src/arrow/value.rs             |  78 ++++++-
+ crates/integrations/datafusion/README.md      |   3 +
+ crates/integrations/datafusion/src/lib.rs     |   9 +-
+ crates/integrations/datafusion/src/scan.rs    |   1 +
+ .../integrations/datafusion/tests/provider.rs | 195 +++++++++++++-----
+ 10 files changed, 369 insertions(+), 73 deletions(-)
+
+diff --git a/crates/iceberg/public-api.txt b/crates/iceberg/public-api.txt
+index 6c0f175312303e932cce86744f139478a165d8c5..8752b04f135aec79990d8504fb5cf3981f5effb6 100644
+--- a/crates/iceberg/public-api.txt
++++ b/crates/iceberg/public-api.txt
+@@ -82,6 +82,7 @@ pub fn iceberg::arrow::ArrowReaderBuilder::with_range_fetch_concurrency(self, ra
+ pub fn iceberg::arrow::ArrowReaderBuilder::with_row_filter_factory<F>(self, factory: F) -> Self where F: core::ops::function::Fn(&iceberg::scan::FileScanTask, &arrow_schema::schema::SchemaRef, &alloc::rcs::arc::Arc<parquet::file::metadata::ParquetMetaData>) -> iceberg::Result<core::option::Option<parquet::arrow::arrow_reader::filter::RowFilter>> + core::marker::Send + core::marker::Sync + 'static
+ pub fn iceberg::arrow::ArrowReaderBuilder::with_row_group_filtering_enabled(self, row_group_filtering_enabled: bool) -> Self
+ pub fn iceberg::arrow::ArrowReaderBuilder::with_row_selection_enabled(self, row_selection_enabled: bool) -> Self
++pub fn iceberg::arrow::ArrowReaderBuilder::with_view_types(self, view_types: bool) -> Self
+ pub struct iceberg::arrow::PartitionValueCalculator
+ impl iceberg::arrow::PartitionValueCalculator
+ pub fn iceberg::arrow::PartitionValueCalculator::calculate(&self, batch: &arrow_array::record_batch::RecordBatch) -> iceberg::Result<arrow_array::array::ArrayRef>
+@@ -136,6 +137,7 @@ pub fn iceberg::arrow::arrow_struct_to_literal(struct_array: &arrow_array::array
+ pub fn iceberg::arrow::arrow_type_to_type(ty: &arrow_schema::datatype::DataType) -> iceberg::Result<iceberg::spec::Type>
+ pub fn iceberg::arrow::datum_to_arrow_type_with_ree(datum: &iceberg::spec::Datum) -> arrow_schema::datatype::DataType
+ pub fn iceberg::arrow::schema_to_arrow_schema(schema: &iceberg::spec::Schema) -> iceberg::Result<arrow_schema::schema::Schema>
++pub fn iceberg::arrow::schema_with_view_types(schema: &arrow_schema::schema::Schema) -> arrow_schema::schema::Schema
+ pub fn iceberg::arrow::strip_metadata_from_schema(schema: &arrow_schema::schema::Schema) -> iceberg::Result<arrow_schema::schema::Schema>
+ pub fn iceberg::arrow::type_to_arrow_type(ty: &iceberg::spec::Type) -> iceberg::Result<arrow_schema::datatype::DataType>
+ pub mod iceberg::cache
+diff --git a/crates/iceberg/src/arrow/reader/mod.rs b/crates/iceberg/src/arrow/reader/mod.rs
+index 322cd0b4e502378913ef75a01f9ba2145976833c..66cd3c61334aa3deb2fd14c594f62da553104b56 100644
+--- a/crates/iceberg/src/arrow/reader/mod.rs
++++ b/crates/iceberg/src/arrow/reader/mod.rs
+@@ -74,6 +74,7 @@ use projection::{
+ /// Builder to create ArrowReader
+ pub struct ArrowReaderBuilder {
+     batch_size: Option<usize>,
++    view_types: bool,
+     file_io: FileIO,
+     concurrency_limit_data_files: usize,
+     row_group_filtering_enabled: bool,
+@@ -93,6 +94,7 @@ impl ArrowReaderBuilder {
+ 
+         ArrowReaderBuilder {
+             batch_size: None,
++            view_types: false,
+             file_io,
+             concurrency_limit_data_files: num_cpus,
+             row_group_filtering_enabled: true,
+@@ -119,6 +121,12 @@ impl ArrowReaderBuilder {
+         self
+     }
+ 
++    /// Requests top-level Parquet string and binary columns as view arrays.
++    pub fn with_view_types(mut self, view_types: bool) -> Self {
++        self.view_types = view_types;
++        self
++    }
++
+     /// Drives reads on the configured CPU runtime with bounded batch prefetching.
+     pub fn with_background_reads(mut self, background_reads: bool) -> Self {
+         self.background_reads = background_reads;
+@@ -207,6 +215,7 @@ impl ArrowReaderBuilder {
+     pub fn build(self) -> ArrowReader {
+         ArrowReader {
+             batch_size: self.batch_size,
++            view_types: self.view_types,
+             file_io: self.file_io.clone(),
+             delete_file_loader: CachingDeleteFileLoader::new(
+                 self.file_io.clone(),
+@@ -229,6 +238,7 @@ impl ArrowReaderBuilder {
+ #[derive(Clone)]
+ pub struct ArrowReader {
+     batch_size: Option<usize>,
++    view_types: bool,
+     file_io: FileIO,
+     delete_file_loader: CachingDeleteFileLoader,
+ 
+diff --git a/crates/iceberg/src/arrow/reader/pipeline.rs b/crates/iceberg/src/arrow/reader/pipeline.rs
+index b056759c1257b1bc6c10e1ee9db47ee3af458937..a886b8621ec011c878a6239d1f22f9125fa384de 100644
+--- a/crates/iceberg/src/arrow/reader/pipeline.rs
++++ b/crates/iceberg/src/arrow/reader/pipeline.rs
+@@ -39,11 +39,11 @@ use super::{
+     add_fallback_field_ids_to_arrow_schema, apply_name_mapping_to_arrow_schema,
+     find_leaf_by_field_id,
+ };
+-use crate::arrow::build_partition_constant;
+ use crate::arrow::caching_delete_file_loader::CachingDeleteFileLoader;
+ use crate::arrow::int96::coerce_int96_timestamps;
+ use crate::arrow::record_batch_transformer::RecordBatchTransformerBuilder;
+ use crate::arrow::scan_metrics::{CountingFileRead, ScanMetrics, ScanResult};
++use crate::arrow::{build_partition_constant, schema_with_view_types};
+ use crate::encryption::StandardKeyMetadata;
+ use crate::error::{Result, invalid_data};
+ use crate::expr::BoundPredicate;
+@@ -70,6 +70,7 @@ impl ArrowReader {
+ 
+         let task_reader = FileScanTaskReader {
+             batch_size: self.batch_size,
++            view_types: self.view_types,
+             file_io: self.file_io,
+             delete_file_loader: self
+                 .delete_file_loader
+@@ -137,6 +138,7 @@ const PRUNABLE_METADATA_FIELDS: &[i32] = &[
+ #[derive(Clone)]
+ struct FileScanTaskReader {
+     batch_size: Option<usize>,
++    view_types: bool,
+     file_io: FileIO,
+     delete_file_loader: CachingDeleteFileLoader,
+     row_group_filtering_enabled: bool,
+@@ -239,6 +241,7 @@ impl FileScanTaskReader {
+             &task,
+             missing_field_ids,
+             install_row_number,
++            self.view_types,
+         )?;
+ 
+         // Build the stream reader, reusing the already-opened file reader
+@@ -364,7 +367,8 @@ impl FileScanTaskReader {
+         // that come back from the file, such as type promotion, default column insertion,
+         // column re-ordering, partition constants, and virtual field addition (like _file)
+         let mut record_batch_transformer_builder =
+-            RecordBatchTransformerBuilder::new(task.schema_ref(), task.project_field_ids());
++            RecordBatchTransformerBuilder::new(task.schema_ref(), task.project_field_ids())
++                .with_view_types(self.view_types);
+ 
+         // Add the _file metadata column if it's in the projected fields
+         if task.project_field_ids().contains(&RESERVED_FIELD_ID_FILE) {
+@@ -693,6 +697,7 @@ impl FileScanTaskReader {
+         task: &FileScanTask,
+         missing_field_ids: bool,
+         install_row_number: bool,
++        view_types: bool,
+     ) -> Result<ArrowReaderMetadata> {
+         // Schema resolution follows the Iceberg Column Projection rule:
+         // "Columns in Iceberg data files are selected by field id."
+@@ -719,12 +724,18 @@ impl FileScanTaskReader {
+             coerce_int96_timestamps(arrow_metadata.schema(), task.schema())
+         {
+             coerced
+-        } else if install_row_number {
++        } else if install_row_number || view_types {
+             Arc::clone(arrow_metadata.schema())
+         } else {
+             return Ok(arrow_metadata);
+         };
+ 
++        let arrow_schema = if view_types {
++            Arc::new(schema_with_view_types(&arrow_schema))
++        } else {
++            arrow_schema
++        };
++
+         let mut options = ArrowReaderOptions::new().with_schema(Arc::clone(&arrow_schema));
+         if install_row_number {
+             let row_number_field = Arc::new(
+diff --git a/crates/iceberg/src/arrow/record_batch_transformer.rs b/crates/iceberg/src/arrow/record_batch_transformer.rs
+index b8b3a403bb35e8b6de8cbc82602f48a11e2f13be..25049db28db10cfb5525ad6d6fa24bba64efb5ff 100644
+--- a/crates/iceberg/src/arrow/record_batch_transformer.rs
++++ b/crates/iceberg/src/arrow/record_batch_transformer.rs
+@@ -36,7 +36,7 @@ use crate::arrow::schema::try_get_field_id_from_metadata;
+ use crate::arrow::value::{create_primitive_array_repeated, create_primitive_array_single_element};
+ use crate::arrow::{
+     datum_to_arrow_type_with_ree, primitive_type_to_arrow_type_with_ree, schema_to_arrow_schema,
+-    type_to_arrow_type,
++    schema_with_view_types, type_to_arrow_type,
+ };
+ use crate::error::invalid_data;
+ use crate::metadata_columns::{
+@@ -518,6 +518,7 @@ enum SchemaComparison {
+ #[derive(Debug)]
+ pub(crate) struct RecordBatchTransformerBuilder {
+     snapshot_schema: Arc<IcebergSchema>,
++    view_types: bool,
+     projected_iceberg_field_ids: Vec<i32>,
+     constant_fields: HashMap<i32, ColumnConstant>,
+     virtual_fields: HashSet<i32>,
+@@ -589,12 +590,18 @@ impl RecordBatchTransformerBuilder {
+     ) -> Self {
+         Self {
+             snapshot_schema,
++            view_types: false,
+             projected_iceberg_field_ids: projected_iceberg_field_ids.to_vec(),
+             constant_fields: HashMap::new(),
+             virtual_fields: HashSet::new(),
+         }
+     }
+ 
++    pub(crate) fn with_view_types(mut self, view_types: bool) -> Self {
++        self.view_types = view_types;
++        self
++    }
++
+     /// Add a scalar constant value for a specific field ID.
+     /// This is used for virtual/metadata fields like _file that have constant values per batch.
+     pub(crate) fn with_constant(mut self, field_id: i32, datum: Datum) -> Self {
+@@ -682,6 +689,7 @@ impl RecordBatchTransformerBuilder {
+     pub(crate) fn build(self) -> RecordBatchTransformer {
+         RecordBatchTransformer {
+             snapshot_schema: self.snapshot_schema,
++            view_types: self.view_types,
+             projected_iceberg_field_ids: self.projected_iceberg_field_ids,
+             constant_fields: self.constant_fields,
+             virtual_fields: self.virtual_fields,
+@@ -723,6 +731,7 @@ impl RecordBatchTransformerBuilder {
+ #[derive(Debug)]
+ pub(crate) struct RecordBatchTransformer {
+     snapshot_schema: Arc<IcebergSchema>,
++    view_types: bool,
+     projected_iceberg_field_ids: Vec<i32>,
+     // Unified map of all per-file constant columns (metadata, identity partition, _partition struct).
+     constant_fields: HashMap<i32, ColumnConstant>,
+@@ -775,6 +784,7 @@ impl RecordBatchTransformer {
+                 self.batch_transform = Some(Self::generate_batch_transform(
+                     record_batch.schema_ref(),
+                     self.snapshot_schema.as_ref(),
++                    self.view_types,
+                     &self.projected_iceberg_field_ids,
+                     &self.constant_fields,
+                     &self.virtual_fields,
+@@ -795,11 +805,17 @@ impl RecordBatchTransformer {
+     fn generate_batch_transform(
+         source_schema: &ArrowSchemaRef,
+         snapshot_schema: &IcebergSchema,
++        view_types: bool,
+         projected_iceberg_field_ids: &[i32],
+         constant_fields: &HashMap<i32, ColumnConstant>,
+         virtual_fields: &HashSet<i32>,
+     ) -> Result<BatchTransform> {
+-        let mapped_unprojected_arrow_schema = Arc::new(schema_to_arrow_schema(snapshot_schema)?);
++        let mapped_unprojected_arrow_schema = schema_to_arrow_schema(snapshot_schema)?;
++        let mapped_unprojected_arrow_schema = Arc::new(if view_types {
++            schema_with_view_types(&mapped_unprojected_arrow_schema)
++        } else {
++            mapped_unprojected_arrow_schema
++        });
+         let field_id_to_mapped_schema_map =
+             Self::build_field_id_to_arrow_schema_map(&mapped_unprojected_arrow_schema)?;
+ 
+@@ -2897,6 +2913,15 @@ mod test {
+     /// - Java impl: core/src/main/java/org/apache/iceberg/util/PartitionUtil.java
+     #[test]
+     fn identity_partition_uses_constant_from_metadata() {
++        identity_partition_uses_constant_from_metadata_with_views(false);
++    }
++
++    #[test]
++    fn identity_partition_uses_string_view_constant_from_metadata() {
++        identity_partition_uses_constant_from_metadata_with_views(true);
++    }
++
++    fn identity_partition_uses_constant_from_metadata_with_views(view_types: bool) {
+         use crate::spec::{Struct, Transform};
+ 
+         // Table schema: id (data column), dept (partition column), name (data column)
+@@ -2926,22 +2951,28 @@ mod test {
+         let partition_data = Struct::from_iter(vec![Some(Literal::string("engineering"))]);
+ 
+         // Parquet file contains only id and name (dept is in partition path)
++        let string_type = if view_types {
++            DataType::Utf8View
++        } else {
++            DataType::Utf8
++        };
+         let parquet_schema = Arc::new(ArrowSchema::new(vec![
+             field_with_id("id", DataType::Int32, false, 1),
+-            field_with_id("name", DataType::Utf8, true, 3),
++            field_with_id("name", string_type.clone(), true, 3),
+         ]));
+ 
+         let projected_field_ids = [1, 2, 3]; // id, dept, name
+ 
+         let mut transformer =
+             RecordBatchTransformerBuilder::new(snapshot_schema, &projected_field_ids)
++                .with_view_types(view_types)
+                 .with_partition(partition_spec, partition_data)
+                 .expect("Failed to add partition constants")
+                 .build();
+ 
+         let parquet_batch = RecordBatch::try_new(parquet_schema, vec![
+             Arc::new(Int32Array::from(vec![100, 200])),
+-            Arc::new(StringArray::from(vec!["Alice", "Bob"])),
++            cast(&StringArray::from(vec!["Alice", "Bob"]), &string_type).unwrap(),
+         ])
+         .unwrap();
+ 
+@@ -2950,24 +2981,23 @@ mod test {
+         // Verify the dept column is populated with the constant from partition metadata
+         assert_eq!(result.num_columns(), 3);
+         assert_eq!(result.num_rows(), 2);
++        assert_eq!(result.schema().field(1).data_type(), &string_type);
++        assert_eq!(result.schema().field(2).data_type(), &string_type);
++
++        let dept = cast(result.column(1), &DataType::Utf8).unwrap();
++        let name = cast(result.column(2), &DataType::Utf8).unwrap();
+ 
+         // Use helpers to handle both simple and REE arrays
+         assert_eq!(get_int_value(result.column(0).as_ref(), 0), 100);
+         assert_eq!(get_int_value(result.column(0).as_ref(), 1), 200);
+ 
+-        // dept column comes from partition metadata (constant) - will be REE
+-        assert_eq!(
+-            get_string_value(result.column(1).as_ref(), 0),
+-            "engineering"
+-        );
+-        assert_eq!(
+-            get_string_value(result.column(1).as_ref(), 1),
+-            "engineering"
+-        );
++        // dept column comes from partition metadata.
++        assert_eq!(get_string_value(dept.as_ref(), 0), "engineering");
++        assert_eq!(get_string_value(dept.as_ref(), 1), "engineering");
+ 
+         // name column comes from file
+-        assert_eq!(get_string_value(result.column(2).as_ref(), 0), "Alice");
+-        assert_eq!(get_string_value(result.column(2).as_ref(), 1), "Bob");
++        assert_eq!(get_string_value(name.as_ref(), 0), "Alice");
++        assert_eq!(get_string_value(name.as_ref(), 1), "Bob");
+     }
+ 
+     /// `identity(s.region)` with `region` absent from the file struct. The constant
+diff --git a/crates/iceberg/src/arrow/schema.rs b/crates/iceberg/src/arrow/schema.rs
+index 34eb597d4714d26eb4a267d797e3b860fb02ae28..698fcef7fd88e272d4c68644ec81f3d101662c1c 100644
+--- a/crates/iceberg/src/arrow/schema.rs
++++ b/crates/iceberg/src/arrow/schema.rs
+@@ -35,6 +35,7 @@ use parquet::file::statistics::Statistics;
+ use uuid::Uuid;
+ 
+ use crate::error::{Result, invalid_data};
++use crate::metadata_columns::is_metadata_field;
+ use crate::spec::decimal_utils::i128_from_be_bytes;
+ use crate::spec::{
+     Datum, FIRST_FIELD_ID, LIST_FIELD_NAME, ListType, MAP_KEY_FIELD_NAME, MAP_VALUE_FIELD_NAME,
+@@ -816,6 +817,27 @@ pub fn type_to_arrow_type(ty: &Type) -> Result<DataType> {
+     }
+ }
+ 
++/// Replaces top-level string and binary fields with views, preserving nested and extension fields.
++pub fn schema_with_view_types(schema: &ArrowSchema) -> ArrowSchema {
++    let fields = schema.fields().iter().map(|field| {
++        let metadata_column = field
++            .metadata()
++            .get(PARQUET_FIELD_ID_META_KEY)
++            .and_then(|id| id.parse::<i32>().ok())
++            .is_some_and(is_metadata_field);
++        if metadata_column || field.extension_type_name().is_some() {
++            return Arc::clone(field);
++        }
++        let data_type = match field.data_type() {
++            DataType::Utf8 | DataType::LargeUtf8 => DataType::Utf8View,
++            DataType::Binary | DataType::LargeBinary => DataType::BinaryView,
++            _ => return Arc::clone(field),
++        };
++        Arc::new(field.as_ref().clone().with_data_type(data_type))
++    });
++    ArrowSchema::new_with_metadata(fields.collect::<Vec<_>>(), schema.metadata().clone())
++}
++
+ /// Convert Iceberg Datum to Arrow Datum.
+ pub(crate) fn get_arrow_datum(datum: &Datum) -> Result<Arc<dyn ArrowDatum + Send + Sync>> {
+     match (datum.data_type(), datum.literal()) {
+@@ -1453,6 +1475,51 @@ mod tests {
+         )]))
+     }
+ 
++    #[test]
++    fn test_schema_with_view_types_preserves_nested_extensions_and_metadata() {
++        let text = simple_field("text", DataType::Utf8, true, "1");
++        let bytes = simple_field("bytes", DataType::LargeBinary, false, "2");
++        let nested = simple_field(
++            "nested",
++            DataType::Struct(vec![simple_field("value", DataType::Utf8, true, "4")].into()),
++            false,
++            "3",
++        );
++        let extension =
++            Field::new("extension", DataType::Binary, true).with_metadata(HashMap::from([(
++                arrow_schema::extension::EXTENSION_TYPE_NAME_KEY.to_owned(),
++                "example.binary".to_owned(),
++            )]));
++        let file = simple_field(
++            "_file",
++            DataType::Utf8,
++            false,
++            &crate::metadata_columns::RESERVED_FIELD_ID_FILE.to_string(),
++        );
++        let metadata = HashMap::from([("source".to_owned(), "fixture".to_owned())]);
++        let schema = ArrowSchema::new_with_metadata(
++            vec![
++                text.clone(),
++                bytes.clone(),
++                nested.clone(),
++                extension.clone(),
++                file.clone(),
++            ],
++            metadata.clone(),
++        );
++        let expected = ArrowSchema::new_with_metadata(
++            vec![
++                text.with_data_type(DataType::Utf8View),
++                bytes.with_data_type(DataType::BinaryView),
++                nested,
++                extension,
++                file,
++            ],
++            metadata,
++        );
++        assert_eq!(schema_with_view_types(&schema), expected);
++    }
++
+     fn arrow_schema_for_arrow_schema_to_schema_test() -> ArrowSchema {
+         let fields = Fields::from(vec![
+             simple_field("key", DataType::Int32, false, "28"),
+diff --git a/crates/iceberg/src/arrow/value.rs b/crates/iceberg/src/arrow/value.rs
+index b3bfb3f8e369442778f6d5d4ccfb8c323a5c1e53..7ef35350f1f81a3756b1333e668545707353b562 100644
+--- a/crates/iceberg/src/arrow/value.rs
++++ b/crates/iceberg/src/arrow/value.rs
+@@ -17,6 +17,7 @@
+ 
+ use std::sync::Arc;
+ 
++use arrow_array::builder::{BinaryViewBuilder, StringViewBuilder};
+ use arrow_array::{
+     Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
+     FixedSizeListArray, Float32Array, Float64Array, Int32Array, Int64Array, LargeBinaryArray,
+@@ -572,9 +573,19 @@ pub(crate) fn create_primitive_array_single_element(
+         (DataType::Utf8, Some(PrimitiveLiteral::String(v))) => {
+             Ok(Arc::new(StringArray::from(vec![v.as_str()])))
+         }
++        (DataType::Utf8View, Some(PrimitiveLiteral::String(v))) => {
++            let mut builder = StringViewBuilder::with_capacity(1);
++            builder.try_append_value_n(v, 1)?;
++            Ok(Arc::new(builder.finish()))
++        }
+         (DataType::Binary, Some(PrimitiveLiteral::Binary(v))) => {
+             Ok(Arc::new(BinaryArray::from_vec(vec![v.as_slice()])))
+         }
++        (DataType::BinaryView, Some(PrimitiveLiteral::Binary(v))) => {
++            let mut builder = BinaryViewBuilder::with_capacity(1);
++            builder.try_append_value_n(v, 1)?;
++            Ok(Arc::new(builder.finish()))
++        }
+         (DataType::Decimal128(precision, scale), Some(PrimitiveLiteral::Int128(v))) => {
+             let array = Decimal128Array::from(vec![{ *v }])
+                 .with_precision_and_scale(*precision, *scale)
+@@ -668,9 +679,19 @@ pub(crate) fn create_primitive_array_repeated(
+         (DataType::Utf8, Some(PrimitiveLiteral::String(value))) => Arc::new(
+             StringArray::from_iter_values(std::iter::repeat_n(value.as_str(), num_rows)),
+         ),
++        (DataType::Utf8View, Some(PrimitiveLiteral::String(value))) => {
++            let mut builder = StringViewBuilder::with_capacity(num_rows);
++            builder.try_append_value_n(value, num_rows)?;
++            Arc::new(builder.finish())
++        }
+         (DataType::Binary, Some(PrimitiveLiteral::Binary(value))) => Arc::new(
+             BinaryArray::from_iter_values(std::iter::repeat_n(value.as_slice(), num_rows)),
+         ),
++        (DataType::BinaryView, Some(PrimitiveLiteral::Binary(value))) => {
++            let mut builder = BinaryViewBuilder::with_capacity(num_rows);
++            builder.try_append_value_n(value, num_rows)?;
++            Arc::new(builder.finish())
++        }
+         (DataType::LargeBinary, Some(PrimitiveLiteral::Binary(value))) => Arc::new(
+             LargeBinaryArray::from_iter_values(std::iter::repeat_n(value.as_slice(), num_rows)),
+         ),
+@@ -734,9 +755,9 @@ mod test {
+ 
+     use arrow_array::builder::{Int32Builder, ListBuilder, MapBuilder, StructBuilder};
+     use arrow_array::{
+-        ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, Float32Array,
+-        Float64Array, Int32Array, Int64Array, StringArray, StructArray, Time64MicrosecondArray,
+-        TimestampMicrosecondArray, TimestampNanosecondArray,
++        ArrayRef, BinaryArray, BinaryViewArray, BooleanArray, Date32Array, Decimal128Array,
++        Float32Array, Float64Array, Int32Array, Int64Array, StringArray, StringViewArray,
++        StructArray, Time64MicrosecondArray, TimestampMicrosecondArray, TimestampNanosecondArray,
+     };
+     use arrow_schema::{DataType, Field, Fields, TimeUnit};
+     use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
+@@ -1664,6 +1685,8 @@ mod test {
+     #[test]
+     fn test_create_null_arrays_preserve_type_and_length() {
+         let data_types = [
++            DataType::Utf8View,
++            DataType::BinaryView,
+             DataType::Decimal128(10, 2),
+             DataType::Timestamp(TimeUnit::Microsecond, Some("+00:00".into())),
+             DataType::Struct(
+@@ -1791,6 +1814,55 @@ mod test {
+         assert_eq!(array.len(), num_rows);
+     }
+ 
++    #[test]
++    fn test_create_view_constants_preserve_values_and_empty_batches() {
++        let text = "a partition value longer than twelve bytes";
++        let bytes = b"a binary value longer than twelve bytes";
++        for num_rows in [0, 1, 4] {
++            let text_literal = PrimitiveLiteral::String(text.to_owned());
++            let binary_literal = PrimitiveLiteral::Binary(bytes.to_vec());
++            let strings =
++                create_primitive_array_repeated(&DataType::Utf8View, Some(&text_literal), num_rows)
++                    .unwrap();
++            let binary = create_primitive_array_repeated(
++                &DataType::BinaryView,
++                Some(&binary_literal),
++                num_rows,
++            )
++            .unwrap();
++            assert_eq!(
++                strings
++                    .as_any()
++                    .downcast_ref::<StringViewArray>()
++                    .unwrap()
++                    .iter()
++                    .collect::<Vec<_>>(),
++                vec![Some(text); num_rows],
++            );
++            assert_eq!(
++                binary
++                    .as_any()
++                    .downcast_ref::<BinaryViewArray>()
++                    .unwrap()
++                    .iter()
++                    .collect::<Vec<_>>(),
++                vec![Some(bytes.as_slice()); num_rows],
++            );
++            if num_rows == 1 {
++                let single =
++                    create_primitive_array_single_element(&DataType::Utf8View, Some(&text_literal))
++                        .unwrap();
++                assert_eq!(single.as_ref(), strings.as_ref());
++                let single = create_primitive_array_single_element(
++                    &DataType::BinaryView,
++                    Some(&binary_literal),
++                )
++                .unwrap();
++                assert_eq!(single.as_ref(), binary.as_ref());
++            }
++        }
++    }
++
+     #[test]
+     fn test_create_string_and_binary_arrays_repeated() {
+         let text = "partition-value-2026";
+diff --git a/crates/integrations/datafusion/README.md b/crates/integrations/datafusion/README.md
+index 0659ac109959ef105bb64ca22cda65d861065c8e..ed2513471c37318ab264afbfaec72c07784a829b 100644
+--- a/crates/integrations/datafusion/README.md
++++ b/crates/integrations/datafusion/README.md
+@@ -22,6 +22,9 @@ fn context(table: Table) -> Result<SessionContext> {
+ The caller keeps the table's Tokio runtime alive. A provider retains the loaded
+ table's schema and snapshot; construct a new provider to observe catalog updates.
+ 
++Top-level string and binary columns use Arrow view arrays. Nested columns and
++extension storage keep their Iceberg Arrow types.
++
+ Scans expose the session's target partition count, with a minimum of two. File
+ byte ranges are balanced across consumers and own disjoint Parquet row groups.
+ Each consumer has its own reader stream. Decoding runs on the table's CPU
+diff --git a/crates/integrations/datafusion/src/lib.rs b/crates/integrations/datafusion/src/lib.rs
+index f41ff0c37943d661a6496906d59efc82dd803ca0..911dbdd9e4eed78bb483ccb3d70274873a7dc1de 100644
+--- a/crates/integrations/datafusion/src/lib.rs
++++ b/crates/integrations/datafusion/src/lib.rs
+@@ -29,14 +29,12 @@ use datafusion::common::stats::Precision;
+ use datafusion::common::{DataFusionError, Result, Statistics};
+ use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
+ use datafusion::physical_plan::ExecutionPlan;
+-use iceberg::arrow::schema_to_arrow_schema;
++use iceberg::arrow::{schema_to_arrow_schema, schema_with_view_types};
+ use iceberg::table::Table;
+ 
+ /// Exposes an immutable Iceberg table snapshot as parallel Parquet scans.
+ ///
+ /// Scans expose at least two partitions, using the session's target when larger.
+-///
+-/// Scans expose at least two partitions, using the session's target when larger.
+ #[derive(Debug)]
+ pub struct IcebergTableProvider {
+     table: Table,
+@@ -46,8 +44,9 @@ pub struct IcebergTableProvider {
+ impl IcebergTableProvider {
+     /// Creates a provider for the current schema and snapshot of `table`.
+     pub fn try_new(table: Table) -> Result<Self> {
+-        let schema =
+-            Arc::new(schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?);
++        let schema = Arc::new(schema_with_view_types(
++            &schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?,
++        ));
+         Ok(Self { table, schema })
+     }
+ }
+diff --git a/crates/integrations/datafusion/src/scan.rs b/crates/integrations/datafusion/src/scan.rs
+index 573e967555cbcc3c1a5c8c6cbf23ad7f4bc132ce..f0b5cb334a086883d458a1a7f22b6f9fb543284d 100644
+--- a/crates/integrations/datafusion/src/scan.rs
++++ b/crates/integrations/datafusion/src/scan.rs
+@@ -181,6 +181,7 @@ impl ExecutionPlan for IcebergScan {
+             .with_batch_size(self.batch_size)
+             .with_data_file_concurrency_limit(1)
+             .with_background_reads(true)
++            .with_view_types(true)
+             .with_compute_time_observer(move |elapsed| compute.add_duration(elapsed))
+             .build()
+             .read(futures::stream::iter(tasks.into_iter().map(Ok)).boxed())
+diff --git a/crates/integrations/datafusion/tests/provider.rs b/crates/integrations/datafusion/tests/provider.rs
+index 6d517f73b142423c7d6aaa161b9ed1a25260068d..dbf6fb99a7552f850b0b5960453f5e40dc73e9f3 100644
+--- a/crates/integrations/datafusion/tests/provider.rs
++++ b/crates/integrations/datafusion/tests/provider.rs
+@@ -19,7 +19,8 @@ use std::collections::HashMap;
+ use std::sync::Arc;
+ 
+ use datafusion::arrow::array::{
+-    ArrayRef, BooleanArray, Float64Array, Int32Array, Int64Array, StringArray, StructArray,
++    ArrayRef, BinaryViewArray, BooleanArray, Float64Array, Int32Array, Int64Array,
++    LargeBinaryArray, StringArray, StringViewArray, StructArray,
+ };
+ use datafusion::arrow::buffer::NullBuffer;
+ use datafusion::arrow::datatypes::{DataType, Field, Schema};
+@@ -38,7 +39,7 @@ use iceberg::metadata_columns::{
+ };
+ use iceberg::spec::{
+     DataContentType, DataFileBuilder, DataFileFormat, FormatVersion, Literal, ManifestListWriter,
+-    ManifestWriterBuilder, Operation, PrimitiveType, Snapshot, Struct, Summary, Type,
++    ManifestWriterBuilder, NestedField, Operation, PrimitiveType, Snapshot, Struct, Summary, Type,
+ };
+ use iceberg::table::Table;
+ use iceberg::transaction::{AddColumn, ApplyTransactionAction, Transaction};
+@@ -88,10 +89,17 @@ impl Fixture {
+             Field::new("flag", DataType::Boolean, true),
+             Field::new(
+                 "payload",
+-                DataType::Struct(vec![Field::new("code", DataType::Int64, true)].into()),
++                DataType::Struct(
++                    vec![
++                        Field::new("code", DataType::Int64, true),
++                        Field::new("text", DataType::Utf8, true),
++                    ]
++                    .into(),
++                ),
+                 true,
+             ),
+             Field::new("special_float", DataType::Float64, true),
++            Field::new("blob", DataType::Binary, true),
+         ]))
+         .unwrap();
+         let mut table = catalog
+@@ -126,12 +134,20 @@ impl Fixture {
+             )),
+             Arc::new(StructArray::new(
+                 payload_fields.clone(),
+-                vec![Arc::new(Int64Array::from_iter(
+-                    (0..ROWS).map(|id| (id % 5 != 0).then_some(id * 3)),
+-                ))],
++                vec![
++                    Arc::new(Int64Array::from_iter(
++                        (0..ROWS).map(|id| (id % 5 != 0).then_some(id * 3)),
++                    )),
++                    Arc::new(StringArray::from_iter(
++                        (0..ROWS).map(|id| (id % 5 != 0).then(|| format!("nested-{id}"))),
++                    )),
++                ],
+                 Some(NullBuffer::from_iter((0..ROWS).map(|id| id % 5 != 0))),
+             )),
+             Arc::new(Float64Array::from(vec![f64::NAN; ROWS as usize])),
++            Arc::new(LargeBinaryArray::from_iter(
++                (0..ROWS).map(|id| (id % 11 != 0).then(|| id.to_le_bytes().to_vec())),
++            )),
+         ])
+         .unwrap();
+         if write {
+@@ -188,6 +204,39 @@ impl Fixture {
+         )
+     }
+ 
++    fn evolve_field(&mut self, index: usize, update: impl FnOnce(&mut NestedField)) {
++        let current = self.table.metadata().current_schema();
++        let mut fields = current.as_struct().fields().to_vec();
++        let mut field = fields[index].as_ref().clone();
++        update(&mut field);
++        fields[index] = Arc::new(field);
++        let schema_id = current.schema_id() + 1;
++        let schema = iceberg::spec::Schema::builder()
++            .with_schema_id(schema_id)
++            .with_fields(fields)
++            .build()
++            .unwrap();
++        let metadata = self
++            .table
++            .metadata()
++            .clone()
++            .into_builder(self.table.metadata_location().map(str::to_owned))
++            .add_schema(schema)
++            .unwrap()
++            .set_current_schema(schema_id)
++            .unwrap()
++            .build()
++            .unwrap()
++            .metadata;
++        self.table = Table::builder()
++            .metadata(metadata)
++            .identifier(self.table.identifier().clone())
++            .file_io(self.table.file_io().clone())
++            .runtime(Runtime::current())
++            .build()
++            .unwrap();
++    }
++
+     async fn add_deletes(&mut self) {
+         let table = &self.table;
+         let positions = [0, 32, 128, 256];
+@@ -344,7 +393,16 @@ fn parallel_single_file_scans_preserve_projection_and_row_counts() {
+             IcebergTableProvider::try_new(fixture.table.clone().with_runtime(runtime)).unwrap();
+         let context = fixture.context();
+         let state = context.state();
+-        let projection = vec![3, 1, 0];
++        assert_eq!(provider.schema().field(1).data_type(), &DataType::Utf8View);
++        assert_eq!(
++            provider.schema().field(5).data_type(),
++            &DataType::BinaryView
++        );
++        let DataType::Struct(payload) = provider.schema().field(3).data_type().clone() else {
++            unreachable!()
++        };
++        assert_eq!(payload[1].data_type(), &DataType::Utf8);
++        let projection = vec![3, 1, 0, 5];
+         let plan = provider
+             .scan(&state, Some(&projection), &[], None)
+             .await
+@@ -362,11 +420,29 @@ fn parallel_single_file_scans_preserve_projection_and_row_counts() {
+         for batch in partitions.into_iter().flatten() {
+             assert_eq!(batch.schema().field(0).name(), "payload");
+             assert_eq!(batch.schema().field(1).name(), "label");
++            assert_eq!(batch.column(1).data_type(), &DataType::Utf8View);
++            assert_eq!(batch.column(3).data_type(), &DataType::BinaryView);
+             let column = batch
+                 .column(2)
+                 .as_any()
+                 .downcast_ref::<Int64Array>()
+                 .unwrap();
++            let blobs = batch
++                .column(3)
++                .as_any()
++                .downcast_ref::<BinaryViewArray>()
++                .unwrap();
++            assert_eq!(
++                blobs
++                    .iter()
++                    .map(|value| value.map(<[u8]>::to_vec))
++                    .collect::<Vec<_>>(),
++                column
++                    .values()
++                    .iter()
++                    .map(|id| (id % 11 != 0).then(|| id.to_le_bytes().to_vec()))
++                    .collect::<Vec<_>>()
++            );
+             ids.extend(column.values().iter().copied());
+         }
+         ids.sort_unstable();
+@@ -604,7 +680,7 @@ async fn deletes_apply_across_split_ranges_and_unprojected_keys() {
+             batch
+                 .column(0)
+                 .as_any()
+-                .downcast_ref::<StringArray>()
++                .downcast_ref::<StringViewArray>()
+                 .unwrap()
+                 .iter()
+                 .map(|value| value.map(str::to_owned))
+@@ -622,7 +698,7 @@ async fn deletes_apply_across_split_ranges_and_unprojected_keys() {
+ 
+ #[tokio::test]
+ async fn added_columns_and_empty_snapshots_keep_their_schema() {
+-    let fixture = Fixture::new(true).await;
++    let mut fixture = Fixture::new(true).await;
+     let tx = Transaction::new(&fixture.table);
+     let table = tx
+         .upgrade_table_version()
+@@ -644,14 +720,21 @@ async fn added_columns_and_empty_snapshots_keep_their_schema() {
+             Type::Primitive(PrimitiveType::Int),
+             Literal::int(7),
+         ))
++        .add_column(AddColumn::required(
++            "default_string",
++            PrimitiveType::String.into(),
++            Literal::string("fallback"),
++        ))
+         .apply(tx)
+         .unwrap()
+         .commit(&fixture.catalog)
+         .await
+         .unwrap();
+-    let provider = Arc::new(IcebergTableProvider::try_new(table).unwrap());
++    fixture.table = table;
++    fixture.evolve_field(1, |field| field.name = "renamed_label".to_owned());
++    let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
+     let context = fixture.context();
+-    let projection = vec![5];
++    let projection = vec![6];
+     let plan = provider
+         .scan(&context.state(), Some(&projection), &[], None)
+         .await
+@@ -667,8 +750,12 @@ async fn added_columns_and_empty_snapshots_keep_their_schema() {
+         ),
+         (ROWS as usize, ROWS as usize)
+     );
+-    context.register_table("evolved", provider).unwrap();
+-    for filter in ["defaulted = 7", "defaulted > 6"] {
++    context.register_table("evolved", provider.clone()).unwrap();
++    for filter in [
++        "defaulted = 7",
++        "defaulted > 6",
++        "default_string = 'fallback'",
++    ] {
+         let batches = context
+             .sql(&format!(
+                 "SELECT id FROM evolved WHERE {filter} ORDER BY id"
+@@ -692,52 +779,66 @@ async fn added_columns_and_empty_snapshots_keep_their_schema() {
+             .collect::<Vec<_>>();
+         assert_eq!(ids, (0..ROWS).collect::<Vec<_>>(), "filter: {filter}");
+     }
+-
++    let batches = context
++        .sql("SELECT renamed_label, default_string FROM evolved ORDER BY id")
++        .await
++        .unwrap()
++        .collect()
++        .await
++        .unwrap();
++    let labels = batches
++        .iter()
++        .flat_map(|batch| {
++            batch
++                .column(0)
++                .as_any()
++                .downcast_ref::<StringViewArray>()
++                .unwrap()
++                .iter()
++                .map(|value| value.map(str::to_owned))
++                .collect::<Vec<_>>()
++        })
++        .collect::<Vec<_>>();
++    let expected = fixture
++        .batch
++        .column(1)
++        .as_any()
++        .downcast_ref::<StringArray>()
++        .unwrap()
++        .iter()
++        .map(|value| value.map(str::to_owned))
++        .collect::<Vec<_>>();
++    assert_eq!(labels, expected);
++    for batch in batches {
++        assert!(
++            batch
++                .column(1)
++                .as_any()
++                .downcast_ref::<StringViewArray>()
++                .unwrap()
++                .iter()
++                .all(|value| value == Some("fallback"))
++        );
++    }
+     let empty = Fixture::new(false).await;
+     let provider = IcebergTableProvider::try_new(empty.table).unwrap();
+     let plan = provider
+         .scan(&context.state(), None, &[], None)
+         .await
+         .unwrap();
+-    assert_eq!(plan.schema(), empty.batch.schema());
++    assert_eq!(
++        plan.schema().as_ref(),
++        &iceberg::arrow::schema_with_view_types(empty.batch.schema().as_ref())
++    );
+     assert_eq!(plan.output_partitioning().partition_count(), 4);
+     assert!(collect(plan, context.task_ctx()).await.unwrap().is_empty());
+ }
+ 
+ #[tokio::test]
+ async fn promoted_integer_predicates_preserve_out_of_range_literals() {
+-    let fixture = Fixture::new_with_id_type(true, DataType::Int32).await;
+-    let current = fixture.table.metadata().current_schema();
+-    let mut fields = current.as_struct().fields().to_vec();
+-    let mut id = fields[0].as_ref().clone();
+-    id.field_type = Box::new(Type::Primitive(PrimitiveType::Long));
+-    fields[0] = Arc::new(id);
+-    let schema_id = current.schema_id() + 1;
+-    let schema = iceberg::spec::Schema::builder()
+-        .with_schema_id(schema_id)
+-        .with_fields(fields)
+-        .build()
+-        .unwrap();
+-    let metadata = fixture
+-        .table
+-        .metadata()
+-        .clone()
+-        .into_builder(fixture.table.metadata_location().map(str::to_owned))
+-        .add_schema(schema)
+-        .unwrap()
+-        .set_current_schema(schema_id)
+-        .unwrap()
+-        .build()
+-        .unwrap()
+-        .metadata;
+-    let table = Table::builder()
+-        .metadata(metadata)
+-        .identifier(fixture.table.identifier().clone())
+-        .file_io(fixture.table.file_io().clone())
+-        .runtime(Runtime::current())
+-        .build()
+-        .unwrap();
+-    let provider = Arc::new(IcebergTableProvider::try_new(table).unwrap());
++    let mut fixture = Fixture::new_with_id_type(true, DataType::Int32).await;
++    fixture.evolve_field(0, |field| *field.field_type = PrimitiveType::Long.into());
++    let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
+     let context = fixture.context();
+     context
+         .register_table("promoted", provider.clone())

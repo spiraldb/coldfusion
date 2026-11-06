@@ -1,0 +1,187 @@
+From 0f05fc5eb955368684ca179866eb8da528e19d3b Mon Sep 17 00:00:00 2001
+From: Daniel King <dan@spiraldb.com>
+Date: Fri, 6 Nov 2026 13:56:40 -0500
+Subject: [PATCH 14/22] Balance scan byte budgets across data file boundaries
+
+---
+ crates/integrations/datafusion/src/scan.rs    | 39 ++++----
+ .../integrations/datafusion/tests/provider.rs | 99 ++++++++++++++++++-
+ 2 files changed, 117 insertions(+), 21 deletions(-)
+
+diff --git a/crates/integrations/datafusion/src/scan.rs b/crates/integrations/datafusion/src/scan.rs
+index 02f3c2e4209fc7a234becbc0b827875a24f91952..573e967555cbcc3c1a5c8c6cbf23ad7f4bc132ce 100644
+--- a/crates/integrations/datafusion/src/scan.rs
++++ b/crates/integrations/datafusion/src/scan.rs
+@@ -80,7 +80,9 @@ impl IcebergScan {
+         statistics.total_byte_size =
+             usize::try_from(total_bytes).map_or(Precision::Absent, Precision::Inexact);
+         let target_bytes = total_bytes.div_ceil(partitions as u64).max(1);
+-        let mut work = Vec::new();
++        let mut groups = vec![Vec::new(); partitions];
++        let mut partition = 0;
++        let mut partition_bytes = 0;
+         for task in tasks {
+             if task.data_file_format() != iceberg::spec::DataFileFormat::Parquet {
+                 return Err(DataFusionError::NotImplemented(
+@@ -92,28 +94,25 @@ impl IcebergScan {
+             })?;
+             let mut start = task.start();
+             while start < end {
+-                let length = target_bytes.min(end - start);
+-                work.push(
+-                    task.clone()
+-                        .with_byte_range(start, length)
+-                        .map_err(external)?,
+-                );
++                if partition_bytes == target_bytes {
++                    partition += 1;
++                    partition_bytes = 0;
++                }
++                let length = (target_bytes - partition_bytes).min(end - start);
++                groups
++                    .get_mut(partition)
++                    .ok_or_else(|| {
++                        DataFusionError::Plan("Iceberg scan partition byte budget overflow".into())
++                    })?
++                    .push(
++                        task.clone()
++                            .with_byte_range(start, length)
++                            .map_err(external)?,
++                    );
+                 start += length;
++                partition_bytes += length;
+             }
+         }
+-        work.sort_unstable_by_key(|task| std::cmp::Reverse(task.length()));
+-        let mut groups = vec![Vec::new(); partitions];
+-        let mut bytes = vec![0u64; partitions];
+-        for task in work {
+-            let partition = bytes
+-                .iter()
+-                .enumerate()
+-                .min_by_key(|(_, size)| *size)
+-                .unwrap()
+-                .0;
+-            bytes[partition] += task.length();
+-            groups[partition].push(task);
+-        }
+         Ok(Self {
+             table,
+             partitions: groups,
+diff --git a/crates/integrations/datafusion/tests/provider.rs b/crates/integrations/datafusion/tests/provider.rs
+index 2d7954cfce7720792abb844d80b416a69555be6f..6d517f73b142423c7d6aaa161b9ed1a25260068d 100644
+--- a/crates/integrations/datafusion/tests/provider.rs
++++ b/crates/integrations/datafusion/tests/provider.rs
+@@ -46,7 +46,7 @@ use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterB
+ use iceberg::{Catalog, CatalogBuilder, MemoryCatalog, NamespaceIdent, Runtime, TableCreation};
+ use iceberg_datafusion::IcebergTableProvider;
+ use parquet::arrow::{ArrowWriter, PARQUET_FIELD_ID_META_KEY};
+-use parquet::file::properties::WriterProperties;
++use parquet::file::properties::{EnabledStatistics, WriterProperties};
+ use tempfile::TempDir;
+ 
+ const ROWS: i64 = 257;
+@@ -402,6 +402,103 @@ fn parallel_single_file_scans_preserve_projection_and_row_counts() {
+     }
+ }
+ 
++#[tokio::test]
++async fn multiple_files_distribute_rows_across_independent_consumers() {
++    const ROWS_PER_FILE: i64 = ROWS * 4;
++    const ROW_GROUP_ROWS: usize = 128;
++    let fixture = Fixture::new(false).await;
++    let mut files = Vec::new();
++    let padding = "x".repeat(2048);
++    let base = datafusion::arrow::compute::concat_batches(
++        &fixture.batch.schema(),
++        std::iter::repeat_n(&fixture.batch, 4),
++    )
++    .unwrap();
++    for file in 0..8 {
++        let first = file * ROWS_PER_FILE;
++        let mut columns = base.columns().to_vec();
++        columns[0] = Arc::new(Int64Array::from_iter_values(first..first + ROWS_PER_FILE));
++        columns[1] = Arc::new(StringArray::from_iter_values(
++            (first..first + ROWS_PER_FILE).map(|id| format!("{id:08}{padding}")),
++        ));
++        let batch = RecordBatch::try_new(fixture.batch.schema(), columns).unwrap();
++        let output = fixture
++            .table
++            .file_io()
++            .new_output(format!(
++                "{}/rows-{file}.parquet",
++                fixture.table.metadata().location()
++            ))
++            .unwrap();
++        let mut writer = ParquetWriterBuilder::new(
++            WriterProperties::builder()
++                .set_compression(parquet::basic::Compression::UNCOMPRESSED)
++                .set_statistics_enabled(EnabledStatistics::None)
++                .set_max_row_group_row_count(Some(ROW_GROUP_ROWS))
++                .build(),
++            fixture.table.metadata().current_schema().clone(),
++        )
++        .build(output)
++        .await
++        .unwrap();
++        writer.write(&batch).await.unwrap();
++        files.extend(writer.close().await.unwrap().into_iter().map(|mut file| {
++            file.content(DataContentType::Data)
++                .partition(Struct::empty())
++                .partition_spec_id(0)
++                .build()
++                .unwrap()
++        }));
++    }
++    let tx = Transaction::new(&fixture.table);
++    let table = tx
++        .fast_append()
++        .add_data_files(files)
++        .apply(tx)
++        .unwrap()
++        .commit(&fixture.catalog)
++        .await
++        .unwrap();
++    let provider = IcebergTableProvider::try_new(table).unwrap();
++    let context = SessionContext::new_with_config(
++        SessionConfig::new()
++            .with_target_partitions(14)
++            .with_batch_size(19),
++    );
++    let projection = vec![0];
++    let plan = provider
++        .scan(&context.state(), Some(&projection), &[], None)
++        .await
++        .unwrap();
++    let partitions = collect_partitioned(plan, context.task_ctx()).await.unwrap();
++    assert_eq!(partitions.len(), 14);
++    let loads = partitions
++        .iter()
++        .map(|batches| batches.iter().map(RecordBatch::num_rows).sum::<usize>())
++        .collect::<Vec<_>>();
++    assert!(loads.iter().all(|rows| *rows > 0));
++    assert!(
++        *loads.iter().max().unwrap()
++            <= (ROWS_PER_FILE as usize * 8).div_ceil(loads.len()) + ROW_GROUP_ROWS,
++        "consumer rows: {loads:?}"
++    );
++    let mut ids = partitions
++        .into_iter()
++        .flatten()
++        .flat_map(|batch| {
++            batch
++                .column(0)
++                .as_any()
++                .downcast_ref::<Int64Array>()
++                .unwrap()
++                .values()
++                .to_vec()
++        })
++        .collect::<Vec<_>>();
++    ids.sort_unstable();
++    assert_eq!(ids, (0..ROWS_PER_FILE * 8).collect::<Vec<_>>());
++}
++
+ #[tokio::test]
+ async fn pushed_and_residual_filters_match_datafusion() {
+     let fixture = Fixture::new(true).await;

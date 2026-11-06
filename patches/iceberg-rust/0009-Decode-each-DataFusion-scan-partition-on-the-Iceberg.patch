@@ -1,0 +1,197 @@
+From 6acff8d55be27db16bfdf6ea68755f24881cc384 Mon Sep 17 00:00:00 2001
+From: Daniel King <dan@spiraldb.com>
+Date: Fri, 6 Nov 2026 12:53:21 -0500
+Subject: [PATCH 09/22] Decode each DataFusion scan partition on the Iceberg
+ CPU executor
+
+---
+ crates/integrations/datafusion/README.md      |   6 +-
+ crates/integrations/datafusion/src/scan.rs    |   8 ++
+ .../integrations/datafusion/tests/provider.rs | 115 +++++++++++-------
+ 3 files changed, 83 insertions(+), 46 deletions(-)
+
+diff --git a/crates/integrations/datafusion/README.md b/crates/integrations/datafusion/README.md
+index 9ff3c171685617773f2ca7058706258dab6582f4..0659ac109959ef105bb64ca22cda65d861065c8e 100644
+--- a/crates/integrations/datafusion/README.md
++++ b/crates/integrations/datafusion/README.md
+@@ -24,8 +24,10 @@ table's schema and snapshot; construct a new provider to observe catalog updates
+ 
+ Scans expose the session's target partition count, with a minimum of two. File
+ byte ranges are balanced across consumers and own disjoint Parquet row groups.
+-Each consumer polls its own reader stream. Small files with one row group can
+-leave some partitions empty.
++Each consumer has its own reader stream. Decoding runs on the table's CPU
++executor, with bounded buffering per partition and cancellation when a consumer
++stops. The table's I/O executor supplies asynchronous I/O and timer drivers.
++Small files with one row group can leave some partitions empty.
+ 
+ Projection, schema evolution, and Iceberg positional and equality deletes use
+ the Iceberg reader. Supported primitive predicates prune manifests and Parquet
+diff --git a/crates/integrations/datafusion/src/scan.rs b/crates/integrations/datafusion/src/scan.rs
+index 10d7e793538eedf0ea6ffe725cba9735c1c0e0e0..b2ed9138e83cbb2eb6f2f0177816774b93927be0 100644
+--- a/crates/integrations/datafusion/src/scan.rs
++++ b/crates/integrations/datafusion/src/scan.rs
+@@ -17,6 +17,7 @@
+ 
+ use std::fmt;
+ use std::sync::Arc;
++use std::time::Duration;
+ 
+ use datafusion::arrow::datatypes::SchemaRef;
+ use datafusion::common::stats::Precision;
+@@ -180,12 +181,14 @@ impl ExecutionPlan for IcebergScan {
+             .reader_builder()
+             .with_batch_size(self.batch_size)
+             .with_data_file_concurrency_limit(1)
++            .with_background_reads(true)
+             .build()
+             .read(futures::stream::iter(tasks.into_iter().map(Ok)).boxed())
+             .map_err(external)?;
+         let io_metrics = native.metrics().clone();
+         let bytes = MetricBuilder::new(&self.metrics).counter("bytes_scanned", partition);
+         let mut bytes_recorded = 0;
++        let mut compute_recorded = 0;
+         let mut input = native.stream().map_err(external);
+         let stream = futures::stream::poll_fn(move |cx| {
+             let timer = baseline.elapsed_compute().timer();
+@@ -194,6 +197,11 @@ impl ExecutionPlan for IcebergScan {
+             let bytes_read = io_metrics.bytes_read();
+             bytes.add((bytes_read - bytes_recorded) as usize);
+             bytes_recorded = bytes_read;
++            let compute = io_metrics.elapsed_compute_nanos();
++            baseline
++                .elapsed_compute()
++                .add_duration(Duration::from_nanos(compute - compute_recorded));
++            compute_recorded = compute;
+             baseline.record_poll(poll)
+         });
+         Ok(Box::pin(RecordBatchStreamAdapter::new(
+diff --git a/crates/integrations/datafusion/tests/provider.rs b/crates/integrations/datafusion/tests/provider.rs
+index 38f8e59e9901959b1454d73fe626a5c2962cfeb4..2d7954cfce7720792abb844d80b416a69555be6f 100644
+--- a/crates/integrations/datafusion/tests/provider.rs
++++ b/crates/integrations/datafusion/tests/provider.rs
+@@ -326,53 +326,80 @@ impl Fixture {
+     }
+ }
+ 
+-#[tokio::test]
+-async fn parallel_single_file_scans_preserve_projection_and_row_counts() {
+-    let fixture = Fixture::new(true).await;
+-    let provider = IcebergTableProvider::try_new(fixture.table.clone()).unwrap();
+-    let context = fixture.context();
+-    let state = context.state();
+-    let projection = vec![3, 1, 0];
+-    let plan = provider
+-        .scan(&state, Some(&projection), &[], None)
+-        .await
++#[test]
++fn parallel_single_file_scans_preserve_projection_and_row_counts() {
++    let query_runtime = tokio::runtime::Builder::new_multi_thread()
++        .worker_threads(2)
++        .enable_all()
++        .build()
+         .unwrap();
+-    assert_eq!(plan.output_partitioning().partition_count(), 4);
+-    let partitions = collect_partitioned(plan, context.task_ctx()).await.unwrap();
+-    assert!(
+-        partitions
+-            .iter()
+-            .filter(|batches| !batches.is_empty())
+-            .count()
+-            > 1
+-    );
+-    let mut ids = Vec::new();
+-    for batch in partitions.into_iter().flatten() {
+-        assert_eq!(batch.schema().field(0).name(), "payload");
+-        assert_eq!(batch.schema().field(1).name(), "label");
+-        let column = batch
+-            .column(2)
+-            .as_any()
+-            .downcast_ref::<Int64Array>()
++    let cpu_runtime = tokio::runtime::Builder::new_multi_thread()
++        .worker_threads(4)
++        .build()
++        .unwrap();
++    let runtime = Runtime::new_with_split(&query_runtime, &cpu_runtime);
++    let (_fixture, plan, context) = query_runtime.block_on(async {
++        let fixture = Fixture::new(true).await;
++        let provider =
++            IcebergTableProvider::try_new(fixture.table.clone().with_runtime(runtime)).unwrap();
++        let context = fixture.context();
++        let state = context.state();
++        let projection = vec![3, 1, 0];
++        let plan = provider
++            .scan(&state, Some(&projection), &[], None)
++            .await
+             .unwrap();
+-        ids.extend(column.values().iter().copied());
+-    }
+-    ids.sort_unstable();
+-    assert_eq!(ids, (0..ROWS).collect::<Vec<_>>());
++        assert_eq!(plan.output_partitioning().partition_count(), 4);
++        let partitions = collect_partitioned(plan, context.task_ctx()).await.unwrap();
++        assert!(
++            partitions
++                .iter()
++                .filter(|batches| !batches.is_empty())
++                .count()
++                > 1
++        );
++        let mut ids = Vec::new();
++        for batch in partitions.into_iter().flatten() {
++            assert_eq!(batch.schema().field(0).name(), "payload");
++            assert_eq!(batch.schema().field(1).name(), "label");
++            let column = batch
++                .column(2)
++                .as_any()
++                .downcast_ref::<Int64Array>()
++                .unwrap();
++            ids.extend(column.values().iter().copied());
++        }
++        ids.sort_unstable();
++        assert_eq!(ids, (0..ROWS).collect::<Vec<_>>());
+ 
+-    let empty = vec![];
+-    let plan = provider
+-        .scan(&state, Some(&empty), &[], None)
+-        .await
+-        .unwrap();
+-    let batches = collect(plan, context.task_ctx()).await.unwrap();
+-    assert_eq!(
+-        (
+-            batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+-            batches.iter().all(|b| b.num_columns() == 0)
+-        ),
+-        (ROWS as usize, true)
+-    );
++        let empty = vec![];
++        let plan = provider
++            .scan(&state, Some(&empty), &[], None)
++            .await
++            .unwrap();
++        let batches = collect(plan, context.task_ctx()).await.unwrap();
++        assert_eq!(
++            (
++                batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
++                batches.iter().all(|b| b.num_columns() == 0)
++            ),
++            (ROWS as usize, true)
++        );
++        let plan = provider.scan(&state, None, &[], None).await.unwrap();
++        (fixture, plan, context.task_ctx())
++    });
++    cpu_runtime.shutdown_background();
++    let error = query_runtime.block_on(collect(plan, context)).unwrap_err();
++    let mut cause: &(dyn std::error::Error + 'static) = &error;
++    loop {
++        if let Some(join) = cause.downcast_ref::<tokio::task::JoinError>() {
++            assert!(join.is_cancelled());
++            break;
++        }
++        cause = cause
++            .source()
++            .expect("CPU executor cancellation must reach the consumer");
++    }
+ }
+ 
+ #[tokio::test]
