@@ -1,0 +1,2 @@
+# Unified diff context lines include a required leading space.
+patches/iceberg-rust/*.patch -whitespace
