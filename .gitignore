@@ -1,0 +1,8 @@
+bench-cache/
+tools/
+target/
+.DS_Store
+/iceberg-rust/
+/spiraldb/
+/.gitmodules
+/AGENTS.md
