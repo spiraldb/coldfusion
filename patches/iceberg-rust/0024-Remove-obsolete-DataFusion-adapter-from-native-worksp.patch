@@ -1,0 +1,3575 @@
+From d28e192ceba4105ff4b4480021d94e3df747915b Mon Sep 17 00:00:00 2001
+From: Daniel King <dan@spiraldb.com>
+Date: Fri, 6 Nov 2026 23:13:06 -0500
+Subject: [PATCH 24/24] Remove obsolete DataFusion adapter from native
+ workspace
+
+---
+ Cargo.lock                                    |  756 -----------
+ crates/integrations/datafusion/Cargo.toml     |   40 -
+ crates/integrations/datafusion/README.md      |   57 -
+ crates/integrations/datafusion/public-api.txt |   12 -
+ crates/integrations/datafusion/src/lib.rs     |  133 --
+ .../integrations/datafusion/src/predicate.rs  |  317 -----
+ crates/integrations/datafusion/src/scan.rs    |  304 -----
+ .../datafusion/src/scan/dynamic_filter.rs     |  497 -------
+ .../integrations/datafusion/src/statistics.rs |  144 ---
+ .../integrations/datafusion/tests/provider.rs | 1145 -----------------
+ 10 files changed, 3405 deletions(-)
+ delete mode 100644 crates/integrations/datafusion/Cargo.toml
+ delete mode 100644 crates/integrations/datafusion/README.md
+ delete mode 100644 crates/integrations/datafusion/public-api.txt
+ delete mode 100644 crates/integrations/datafusion/src/lib.rs
+ delete mode 100644 crates/integrations/datafusion/src/predicate.rs
+ delete mode 100644 crates/integrations/datafusion/src/scan.rs
+ delete mode 100644 crates/integrations/datafusion/src/scan/dynamic_filter.rs
+ delete mode 100644 crates/integrations/datafusion/src/statistics.rs
+ delete mode 100644 crates/integrations/datafusion/tests/provider.rs
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 70d867f8..f97aa671 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -333,7 +333,6 @@ dependencies = [
+  "atoi",
+  "base64 0.23.0",
+  "chrono",
+- "comfy-table",
+  "half",
+  "lexical-core",
+  "num-traits",
+@@ -380,8 +379,6 @@ dependencies = [
+  "arrow-schema",
+  "arrow-select",
+  "flatbuffers",
+- "lz4_flex 0.14.0",
+- "zstd",
+ ]
+ 
+ [[package]]
+@@ -1696,16 +1693,6 @@ dependencies = [
+  "memchr",
+ ]
+ 
+-[[package]]
+-name = "comfy-table"
+-version = "7.2.2"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "958c5d6ecf1f214b4c2bbbbf6ab9523a864bd136dcf71a7e8904799acfe1ad47"
+-dependencies = [
+- "unicode-segmentation",
+- "unicode-width",
+-]
+-
+ [[package]]
+ name = "concurrent-queue"
+ version = "2.5.0"
+@@ -2095,657 +2082,6 @@ dependencies = [
+  "parking_lot_core",
+ ]
+ 
+-[[package]]
+-name = "datafusion"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "4cd5317db77ba6bca25c761a8091b9d294a9f4188e4f9dcd0243e6a57de862ac"
+-dependencies = [
+- "arrow",
+- "arrow-schema",
+- "async-trait",
+- "chrono",
+- "datafusion-catalog",
+- "datafusion-catalog-listing",
+- "datafusion-common",
+- "datafusion-common-runtime",
+- "datafusion-datasource",
+- "datafusion-datasource-arrow",
+- "datafusion-datasource-csv",
+- "datafusion-datasource-json",
+- "datafusion-datasource-parquet",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-expr-common",
+- "datafusion-functions",
+- "datafusion-functions-aggregate",
+- "datafusion-functions-nested",
+- "datafusion-functions-table",
+- "datafusion-functions-window",
+- "datafusion-optimizer",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-adapter",
+- "datafusion-physical-expr-common",
+- "datafusion-physical-optimizer",
+- "datafusion-physical-plan",
+- "datafusion-session",
+- "datafusion-sql",
+- "futures",
+- "indexmap 2.14.0",
+- "itertools 0.15.0",
+- "log",
+- "object_store",
+- "parking_lot",
+- "parquet",
+- "sqlparser",
+- "tempfile",
+- "tokio",
+- "url",
+- "uuid",
+-]
+-
+-[[package]]
+-name = "datafusion-catalog"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "f35d36794509b7bfcbf90e11a1b5e4d047123c34610105e2e80a2048351cdb2f"
+-dependencies = [
+- "arrow",
+- "async-trait",
+- "dashmap",
+- "datafusion-common",
+- "datafusion-common-runtime",
+- "datafusion-datasource",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-physical-expr",
+- "datafusion-physical-plan",
+- "datafusion-session",
+- "futures",
+- "itertools 0.15.0",
+- "log",
+- "object_store",
+- "parking_lot",
+- "tokio",
+-]
+-
+-[[package]]
+-name = "datafusion-catalog-listing"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "a6454bfb7f43b83942e2ca2576fd09342eedbd0d323e1eef72c3c8e4d57d7203"
+-dependencies = [
+- "arrow",
+- "async-trait",
+- "datafusion-catalog",
+- "datafusion-common",
+- "datafusion-datasource",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-adapter",
+- "datafusion-physical-expr-common",
+- "datafusion-physical-plan",
+- "futures",
+- "itertools 0.15.0",
+- "log",
+- "object_store",
+- "percent-encoding",
+-]
+-
+-[[package]]
+-name = "datafusion-common"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "d26626e12b224b83351239465dcd00f72d47b02fb5e5b65a643e2dc8ed37f687"
+-dependencies = [
+- "arrow",
+- "arrow-ipc",
+- "arrow-schema",
+- "chrono",
+- "foldhash 0.2.0",
+- "half",
+- "hashbrown 0.17.1",
+- "indexmap 2.14.0",
+- "itertools 0.15.0",
+- "libc",
+- "log",
+- "num-traits",
+- "object_store",
+- "parquet",
+- "sqlparser",
+- "tokio",
+- "uuid",
+- "web-time",
+-]
+-
+-[[package]]
+-name = "datafusion-common-runtime"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "a106420cbfa980f242c22243ae9a6cce661d4d86ce96cff87dacabf7754a4470"
+-dependencies = [
+- "futures",
+- "log",
+- "tokio",
+-]
+-
+-[[package]]
+-name = "datafusion-datasource"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "210aa1e9525e9454f2399dbb8b0b95510145bd8c1fdc35de74e9ccbf81bcb699"
+-dependencies = [
+- "arrow",
+- "async-trait",
+- "bytes",
+- "chrono",
+- "datafusion-common",
+- "datafusion-common-runtime",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-adapter",
+- "datafusion-physical-expr-common",
+- "datafusion-physical-plan",
+- "datafusion-session",
+- "futures",
+- "glob",
+- "itertools 0.15.0",
+- "log",
+- "object_store",
+- "parking_lot",
+- "rand 0.9.5",
+- "tokio",
+- "url",
+-]
+-
+-[[package]]
+-name = "datafusion-datasource-arrow"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "65b1b041688cad707fa103c3e7f4c6d89b3134ebf67da0129070dad3381851eb"
+-dependencies = [
+- "arrow",
+- "arrow-ipc",
+- "async-trait",
+- "bytes",
+- "datafusion-common",
+- "datafusion-common-runtime",
+- "datafusion-datasource",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-physical-expr-common",
+- "datafusion-physical-plan",
+- "datafusion-session",
+- "futures",
+- "itertools 0.15.0",
+- "object_store",
+- "tokio",
+-]
+-
+-[[package]]
+-name = "datafusion-datasource-csv"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "2a7b34e253c4fa5251f174977af910a2f2ec831ec39dbbb56b29ce505cff278b"
+-dependencies = [
+- "arrow",
+- "async-trait",
+- "bytes",
+- "datafusion-common",
+- "datafusion-common-runtime",
+- "datafusion-datasource",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-physical-expr-common",
+- "datafusion-physical-plan",
+- "datafusion-session",
+- "futures",
+- "object_store",
+- "regex",
+- "tokio",
+-]
+-
+-[[package]]
+-name = "datafusion-datasource-json"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "1663338f43be6a5746473008e2d0fbde282577ddf0bae90d6c7386e988d71b29"
+-dependencies = [
+- "arrow",
+- "async-trait",
+- "bytes",
+- "datafusion-common",
+- "datafusion-common-runtime",
+- "datafusion-datasource",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-physical-expr-common",
+- "datafusion-physical-plan",
+- "datafusion-session",
+- "futures",
+- "object_store",
+- "tokio",
+- "tokio-stream",
+-]
+-
+-[[package]]
+-name = "datafusion-datasource-parquet"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "7c521ae91b6d899d7190812881f45fe9463c222c11d90149f5332a2e56555904"
+-dependencies = [
+- "arrow",
+- "arrow-schema",
+- "async-trait",
+- "bytes",
+- "datafusion-common",
+- "datafusion-common-runtime",
+- "datafusion-datasource",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-functions",
+- "datafusion-functions-aggregate-common",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-adapter",
+- "datafusion-physical-expr-common",
+- "datafusion-physical-plan",
+- "datafusion-pruning",
+- "datafusion-session",
+- "futures",
+- "itertools 0.15.0",
+- "log",
+- "object_store",
+- "parking_lot",
+- "parquet",
+- "tokio",
+-]
+-
+-[[package]]
+-name = "datafusion-doc"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "0c2569c2e74a34fcae3a369ab3912d61e41a062592510f11e31b1dae2725ecdc"
+-
+-[[package]]
+-name = "datafusion-execution"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "39cfdd5ac0769d1e74a885450e49fde8f63ca7ab41eb479a068564aaea80b837"
+-dependencies = [
+- "arrow",
+- "arrow-buffer",
+- "async-trait",
+- "bytes",
+- "dashmap",
+- "datafusion-common",
+- "datafusion-expr",
+- "datafusion-physical-expr-common",
+- "futures",
+- "log",
+- "object_store",
+- "parking_lot",
+- "pin-project-lite",
+- "rand 0.9.5",
+- "tempfile",
+- "tokio",
+- "tokio-util",
+- "url",
+-]
+-
+-[[package]]
+-name = "datafusion-expr"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "86560fd7df4dda924f5474b588c56e7ae8e96dcf158c7327c9cfe9daff448ec5"
+-dependencies = [
+- "arrow",
+- "arrow-schema",
+- "async-trait",
+- "chrono",
+- "datafusion-common",
+- "datafusion-doc",
+- "datafusion-expr-common",
+- "datafusion-functions-aggregate-common",
+- "datafusion-functions-window-common",
+- "datafusion-physical-expr-common",
+- "indexmap 2.14.0",
+- "itertools 0.15.0",
+- "serde",
+- "serde_json",
+- "sqlparser",
+-]
+-
+-[[package]]
+-name = "datafusion-expr-common"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "e82e313cf655cf6bc2dce6cbd23bcb0d20236a54a1b09c436615e4bac4d8c49f"
+-dependencies = [
+- "arrow",
+- "datafusion-common",
+- "indexmap 2.14.0",
+- "itertools 0.15.0",
+-]
+-
+-[[package]]
+-name = "datafusion-functions"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "939ae2771da8a3fdc23ab4de610ae8fef9515476626b49d96d0d5c782b105771"
+-dependencies = [
+- "arrow",
+- "arrow-buffer",
+- "base64 0.23.0",
+- "chrono",
+- "chrono-tz",
+- "datafusion-common",
+- "datafusion-doc",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-expr-common",
+- "datafusion-macros",
+- "datafusion-physical-expr-common",
+- "hex",
+- "itertools 0.15.0",
+- "log",
+- "memchr",
+- "num-traits",
+- "rand 0.9.5",
+- "regex",
+- "uuid",
+-]
+-
+-[[package]]
+-name = "datafusion-functions-aggregate"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "fd6c3aee9f2bc65716787d651e023743a90b4efbc57a2f679f036632e16fb110"
+-dependencies = [
+- "arrow",
+- "datafusion-common",
+- "datafusion-doc",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-functions-aggregate-common",
+- "datafusion-macros",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-common",
+- "half",
+- "hashbrown 0.17.1",
+- "log",
+- "num-traits",
+-]
+-
+-[[package]]
+-name = "datafusion-functions-aggregate-common"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "988b5d3dfb4939d81c2f9fab267063610fe52a843620f2fa6cb2a1598e43369c"
+-dependencies = [
+- "arrow",
+- "datafusion-common",
+- "datafusion-expr-common",
+- "datafusion-physical-expr-common",
+-]
+-
+-[[package]]
+-name = "datafusion-functions-nested"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "08149d433a97c9ea3cdf80de06480ab5c7f5453485f1e452d5b3583c81d5c0dd"
+-dependencies = [
+- "arrow",
+- "arrow-ord",
+- "datafusion-common",
+- "datafusion-doc",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-expr-common",
+- "datafusion-functions",
+- "datafusion-functions-aggregate",
+- "datafusion-functions-aggregate-common",
+- "datafusion-macros",
+- "datafusion-physical-expr-common",
+- "hashbrown 0.17.1",
+- "itertools 0.15.0",
+- "itoa",
+- "log",
+- "memchr",
+-]
+-
+-[[package]]
+-name = "datafusion-functions-table"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "2c767567cce2782d4d0bdfa55fab010aaba0bdbe533509e9e0b9a6a3ee29ed59"
+-dependencies = [
+- "arrow",
+- "async-trait",
+- "datafusion-catalog",
+- "datafusion-common",
+- "datafusion-expr",
+- "datafusion-physical-expr",
+- "datafusion-physical-plan",
+- "parking_lot",
+-]
+-
+-[[package]]
+-name = "datafusion-functions-window"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "0a311c1f558d1f792f1f631c3670da12ee72a20fbf5d6ca151325d66191c03c1"
+-dependencies = [
+- "arrow",
+- "datafusion-common",
+- "datafusion-doc",
+- "datafusion-expr",
+- "datafusion-functions-window-common",
+- "datafusion-macros",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-common",
+- "log",
+-]
+-
+-[[package]]
+-name = "datafusion-functions-window-common"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "fffd54b8acf6ecef284cc0677e01e1b8c71be64fec50612ba00a0ff0d9b41a52"
+-dependencies = [
+- "datafusion-common",
+- "datafusion-physical-expr-common",
+-]
+-
+-[[package]]
+-name = "datafusion-macros"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "14d6df9763c8fb968b2417d797aef4c55ac2e4a895aaef38c72c16a287aa4a40"
+-dependencies = [
+- "datafusion-doc",
+- "quote",
+- "syn 3.0.9",
+-]
+-
+-[[package]]
+-name = "datafusion-optimizer"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "acfb8cea6e05e2e75bae183340cf7d53cccb3db0449e2f1fbc07654d980fd19f"
+-dependencies = [
+- "arrow",
+- "chrono",
+- "datafusion-common",
+- "datafusion-expr",
+- "datafusion-expr-common",
+- "datafusion-physical-expr",
+- "indexmap 2.14.0",
+- "itertools 0.15.0",
+- "log",
+- "regex",
+- "regex-syntax",
+-]
+-
+-[[package]]
+-name = "datafusion-physical-expr"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "9f002cef849e10c0597a217ec7891c2796c0f8b42d739f5d24abc24496373406"
+-dependencies = [
+- "arrow",
+- "arrow-schema",
+- "datafusion-common",
+- "datafusion-expr",
+- "datafusion-expr-common",
+- "datafusion-functions-aggregate-common",
+- "datafusion-physical-expr-common",
+- "half",
+- "hashbrown 0.17.1",
+- "indexmap 2.14.0",
+- "itertools 0.15.0",
+- "parking_lot",
+- "petgraph",
+- "tokio",
+-]
+-
+-[[package]]
+-name = "datafusion-physical-expr-adapter"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "82761522c4536e7059d3b185cd99f10525c2bf48f1bd26a0a57e73e19eadc0fb"
+-dependencies = [
+- "arrow",
+- "datafusion-common",
+- "datafusion-expr",
+- "datafusion-functions",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-common",
+- "itertools 0.15.0",
+-]
+-
+-[[package]]
+-name = "datafusion-physical-expr-common"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "f8c5c67aa252886f4d6b331c8114797f5b140464e774c4da36889269a1bf1bd8"
+-dependencies = [
+- "arrow",
+- "chrono",
+- "datafusion-common",
+- "datafusion-expr-common",
+- "hashbrown 0.17.1",
+- "indexmap 2.14.0",
+- "itertools 0.15.0",
+- "parking_lot",
+- "pin-project",
+-]
+-
+-[[package]]
+-name = "datafusion-physical-optimizer"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "f1a49dd3a76e4879012682c59dc3735282e60640c97483546a4113564a60bf8f"
+-dependencies = [
+- "arrow",
+- "datafusion-common",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-expr-common",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-common",
+- "datafusion-physical-plan",
+- "datafusion-pruning",
+- "datafusion-session",
+- "itertools 0.15.0",
+-]
+-
+-[[package]]
+-name = "datafusion-physical-plan"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "b1451d6817e5ac0dd21819b19949d1c420ab51d748f55dd9a96ecb5418a24c97"
+-dependencies = [
+- "arrow",
+- "arrow-data",
+- "arrow-ipc",
+- "arrow-ord",
+- "arrow-schema",
+- "async-trait",
+- "bytes",
+- "datafusion-common",
+- "datafusion-common-runtime",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-functions",
+- "datafusion-functions-aggregate-common",
+- "datafusion-functions-window-common",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-common",
+- "futures",
+- "half",
+- "hashbrown 0.17.1",
+- "indexmap 2.14.0",
+- "itertools 0.15.0",
+- "log",
+- "num-traits",
+- "parking_lot",
+- "pin-project-lite",
+- "serde",
+- "serde_json",
+- "tokio",
+-]
+-
+-[[package]]
+-name = "datafusion-pruning"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "f11f0dbe2b5a642f6106e44de8bbd6654fa7220ca14f32313d4efd5514a86968"
+-dependencies = [
+- "arrow",
+- "datafusion-common",
+- "datafusion-datasource",
+- "datafusion-expr-common",
+- "datafusion-physical-expr",
+- "datafusion-physical-expr-common",
+- "datafusion-physical-plan",
+- "log",
+-]
+-
+-[[package]]
+-name = "datafusion-session"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "62dc5ce37a5ce1ff5362949776829aded2529a11dbaa13d24b0ffa6a059e106a"
+-dependencies = [
+- "arrow-schema",
+- "async-trait",
+- "datafusion-common",
+- "datafusion-execution",
+- "datafusion-expr",
+- "datafusion-physical-plan",
+- "parking_lot",
+-]
+-
+-[[package]]
+-name = "datafusion-sql"
+-version = "55.2.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "816c224a0ef5469a32a562b5d4830544f714f97c5f50142109286d40a288c7db"
+-dependencies = [
+- "arrow",
+- "bigdecimal",
+- "chrono",
+- "datafusion-common",
+- "datafusion-expr",
+- "datafusion-functions-nested",
+- "indexmap 2.14.0",
+- "log",
+- "regex",
+- "sqlparser",
+-]
+-
+ [[package]]
+ name = "defmt"
+ version = "1.1.1"
+@@ -3157,12 +2493,6 @@ version = "0.1.9"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+ 
+-[[package]]
+-name = "fixedbitset"
+-version = "0.5.7"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
+-
+ [[package]]
+ name = "flatbuffers"
+ version = "25.12.19"
+@@ -4111,19 +3441,6 @@ dependencies = [
+  "tracing",
+ ]
+ 
+-[[package]]
+-name = "iceberg-datafusion"
+-version = "0.10.1"
+-dependencies = [
+- "async-trait",
+- "datafusion",
+- "futures",
+- "iceberg",
+- "parquet",
+- "tempfile",
+- "tokio",
+-]
+-
+ [[package]]
+ name = "iceberg-examples"
+ version = "0.10.1"
+@@ -5272,32 +4589,6 @@ dependencies = [
+  "objc2-core-foundation",
+ ]
+ 
+-[[package]]
+-name = "object_store"
+-version = "0.13.2"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "622acbc9100d3c10e2ee15804b0caa40e55c933d5aa53814cd520805b7958a49"
+-dependencies = [
+- "async-trait",
+- "bytes",
+- "chrono",
+- "futures-channel",
+- "futures-core",
+- "futures-util",
+- "http 1.5.0",
+- "humantime",
+- "itertools 0.14.0",
+- "parking_lot",
+- "percent-encoding",
+- "thiserror 2.0.18",
+- "tokio",
+- "tracing",
+- "url",
+- "walkdir",
+- "wasm-bindgen-futures",
+- "web-time",
+-]
+-
+ [[package]]
+ name = "once_cell"
+ version = "1.21.4"
+@@ -5709,7 +5000,6 @@ dependencies = [
+  "num-bigint 0.5.1",
+  "num-integer",
+  "num-traits",
+- "object_store",
+  "ring",
+  "seq-macro",
+  "simdutf8",
+@@ -5825,18 +5115,6 @@ version = "2.3.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+ 
+-[[package]]
+-name = "petgraph"
+-version = "0.8.3"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
+-dependencies = [
+- "fixedbitset",
+- "hashbrown 0.15.5",
+- "indexmap 2.14.0",
+- "serde",
+-]
+-
+ [[package]]
+ name = "phf"
+ version = "0.12.1"
+@@ -7521,27 +6799,6 @@ dependencies = [
+  "der",
+ ]
+ 
+-[[package]]
+-name = "sqlparser"
+-version = "0.62.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "13c6d1b651dc4edf07eead2a0c6c78016ce971bc2c10da5266861b13f25e7cec"
+-dependencies = [
+- "log",
+- "sqlparser_derive",
+-]
+-
+-[[package]]
+-name = "sqlparser_derive"
+-version = "0.5.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "a6dd45d8fc1c79299bfbb7190e42ccbbdf6a5f52e4a6ad98d92357ea965bd289"
+-dependencies = [
+- "proc-macro2",
+- "quote",
+- "syn 2.0.119",
+-]
+-
+ [[package]]
+ name = "sqlx"
+ version = "0.8.6"
+@@ -8139,7 +7396,6 @@ dependencies = [
+  "futures-core",
+  "pin-project-lite",
+  "tokio",
+- "tokio-util",
+ ]
+ 
+ [[package]]
+@@ -8458,18 +7714,6 @@ version = "0.1.4"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
+ 
+-[[package]]
+-name = "unicode-segmentation"
+-version = "1.13.3"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
+-
+-[[package]]
+-name = "unicode-width"
+-version = "0.2.3"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
+-
+ [[package]]
+ name = "universal-hash"
+ version = "0.5.1"
+diff --git a/crates/integrations/datafusion/Cargo.toml b/crates/integrations/datafusion/Cargo.toml
+deleted file mode 100644
+index 02796a71..00000000
+--- a/crates/integrations/datafusion/Cargo.toml
++++ /dev/null
+@@ -1,40 +0,0 @@
+-# Licensed to the Apache Software Foundation (ASF) under one
+-# or more contributor license agreements.  See the NOTICE file
+-# distributed with this work for additional information
+-# regarding copyright ownership.  The ASF licenses this file
+-# to you under the Apache License, Version 2.0 (the
+-# "License"); you may not use this file except in compliance
+-# with the License.  You may obtain a copy of the License at
+-#
+-#   http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing,
+-# software distributed under the License is distributed on an
+-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+-# KIND, either express or implied.  See the License for the
+-# specific language governing permissions and limitations
+-# under the License.
+-
+-[package]
+-name = "iceberg-datafusion"
+-version.workspace = true
+-edition.workspace = true
+-license.workspace = true
+-rust-version.workspace = true
+-description = "Parallel Parquet Iceberg table provider for DataFusion"
+-
+-[dependencies]
+-async-trait.workspace = true
+-datafusion = { version = "55.2", default-features = false, features = ["parquet"] }
+-futures.workspace = true
+-iceberg.workspace = true
+-parquet.workspace = true
+-tokio.workspace = true
+-
+-[dev-dependencies]
+-datafusion = { version = "55.2", default-features = false, features = ["sql"] }
+-tempfile.workspace = true
+-tokio = { workspace = true, features = ["macros"] }
+-
+-[lints]
+-workspace = true
+diff --git a/crates/integrations/datafusion/README.md b/crates/integrations/datafusion/README.md
+deleted file mode 100644
+index db5c8e2c..00000000
+--- a/crates/integrations/datafusion/README.md
++++ /dev/null
+@@ -1,57 +0,0 @@
+-# Iceberg DataFusion provider
+-
+-`IcebergTableProvider` scans a loaded Iceberg snapshot using Parquet data files.
+-It implements the standard DataFusion 55 `TableProvider` interface.
+-
+-```rust,no_run
+-use std::sync::Arc;
+-use datafusion::common::Result;
+-use datafusion::prelude::{SessionConfig, SessionContext};
+-use iceberg::table::Table;
+-use iceberg_datafusion::IcebergTableProvider;
+-
+-fn context(table: Table) -> Result<SessionContext> {
+-    let context = SessionContext::new_with_config(
+-        SessionConfig::new().with_target_partitions(8),
+-    );
+-    context.register_table("events", Arc::new(IcebergTableProvider::try_new(table)?))?;
+-    Ok(context)
+-}
+-```
+-
+-The caller keeps the table's Tokio runtime alive. A provider retains the loaded
+-table's schema and snapshot; construct a new provider to observe catalog updates.
+-
+-String and binary columns use the canonical Iceberg Arrow types, `Utf8` and
+-`LargeBinary`.
+-
+-Scans expose the session's target partition count, with a minimum of two. File
+-byte ranges are balanced across consumers and own disjoint Parquet row groups.
+-Each consumer has its own reader stream. Decoding runs on the table's CPU
+-executor when the query runtime has fewer workers than the smaller of the scan's
+-partition count and available CPU count. Otherwise the query workers decode
+-directly. Background reads have bounded buffering per partition and cancel when
+-a consumer stops. The table's I/O executor supplies asynchronous I/O and timers.
+-Small files with one row group can leave some partitions empty.
+-
+-Projection, schema evolution, and Iceberg positional and equality deletes use
+-the Iceberg reader. Supported primitive predicates prune manifests and Parquet
+-row groups; DataFusion retains the complete residual filter. Whole nested
+-values, initial defaults, and floating comparisons remain residual to preserve
+-DataFusion semantics. Limits are enforced by DataFusion.
+-
+-DataFusion's live join and top-k filters can prune rows during Parquet decoding.
+-The reader uses comparisons, null checks, and short literal lists, observing
+-filter updates between batches. Fields are matched by Iceberg ID. Expensive
+-expressions and fields that cannot be adapted keep the complete DataFusion
+-residual filter.
+-
+-The default dependency graph excludes Vortex. The provider rejects data-file
+-formats other than Parquet even if another application enables optional formats
+-on the core Iceberg crate.
+-
+-Run the real-file integration and predicate tests with:
+-
+-```sh
+-cargo test -p iceberg-datafusion
+-```
+diff --git a/crates/integrations/datafusion/public-api.txt b/crates/integrations/datafusion/public-api.txt
+deleted file mode 100644
+index a90270df..00000000
+--- a/crates/integrations/datafusion/public-api.txt
++++ /dev/null
+@@ -1,12 +0,0 @@
+-pub mod iceberg_datafusion
+-pub struct iceberg_datafusion::IcebergTableProvider
+-impl iceberg_datafusion::IcebergTableProvider
+-pub fn iceberg_datafusion::IcebergTableProvider::try_new(table: iceberg::table::Table) -> datafusion_common::error::Result<Self>
+-impl core::fmt::Debug for iceberg_datafusion::IcebergTableProvider
+-pub fn iceberg_datafusion::IcebergTableProvider::fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+-impl datafusion_session::table::TableProvider for iceberg_datafusion::IcebergTableProvider
+-pub fn iceberg_datafusion::IcebergTableProvider::scan<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, state: &'life1 dyn datafusion_session::session::Session, projection: core::option::Option<&'life2 alloc::vec::Vec<usize>>, filters: &'life3 [datafusion_expr::expr::Expr], _limit: core::option::Option<usize>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = datafusion_common::error::Result<alloc::rcs::arc::Arc<dyn datafusion_physical_plan::execution_plan::ExecutionPlan>>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
+-pub fn iceberg_datafusion::IcebergTableProvider::schema(&self) -> arrow_schema::schema::SchemaRef
+-pub fn iceberg_datafusion::IcebergTableProvider::statistics(&self) -> core::option::Option<datafusion_common::stats::Statistics>
+-pub fn iceberg_datafusion::IcebergTableProvider::supports_filters_pushdown(&self, filters: &[&datafusion_expr::expr::Expr]) -> datafusion_common::error::Result<alloc::vec::Vec<datafusion_expr::table_source::TableProviderFilterPushDown>>
+-pub fn iceberg_datafusion::IcebergTableProvider::table_type(&self) -> datafusion_expr::table_source::TableType
+diff --git a/crates/integrations/datafusion/src/lib.rs b/crates/integrations/datafusion/src/lib.rs
+deleted file mode 100644
+index ff29821c..00000000
+--- a/crates/integrations/datafusion/src/lib.rs
++++ /dev/null
+@@ -1,133 +0,0 @@
+-// Licensed to the Apache Software Foundation (ASF) under one
+-// or more contributor license agreements.  See the NOTICE file
+-// distributed with this work for additional information
+-// regarding copyright ownership.  The ASF licenses this file
+-// to you under the Apache License, Version 2.0 (the
+-// "License"); you may not use this file except in compliance
+-// with the License.  You may obtain a copy of the License at
+-//
+-//   http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing,
+-// software distributed under the License is distributed on an
+-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+-// KIND, either express or implied.  See the License for the
+-// specific language governing permissions and limitations
+-// under the License.
+-
+-//! Parallel Parquet scans of Iceberg snapshots in DataFusion.
+-
+-mod predicate;
+-mod scan;
+-mod statistics;
+-
+-use std::sync::Arc;
+-
+-use async_trait::async_trait;
+-use datafusion::arrow::datatypes::SchemaRef;
+-use datafusion::catalog::{Session, TableProvider};
+-use datafusion::common::stats::Precision;
+-use datafusion::common::{DataFusionError, Result, Statistics};
+-use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
+-use datafusion::physical_plan::ExecutionPlan;
+-use iceberg::arrow::schema_to_arrow_schema;
+-use iceberg::table::Table;
+-
+-/// Exposes an immutable Iceberg table snapshot as parallel Parquet scans.
+-///
+-/// Scans expose at least two partitions, using the session's target when larger.
+-#[derive(Debug)]
+-pub struct IcebergTableProvider {
+-    table: Table,
+-    schema: SchemaRef,
+-}
+-
+-impl IcebergTableProvider {
+-    /// Creates a provider for the current schema and snapshot of `table`.
+-    pub fn try_new(table: Table) -> Result<Self> {
+-        let schema =
+-            Arc::new(schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?);
+-        Ok(Self { table, schema })
+-    }
+-}
+-
+-fn external(error: iceberg::Error) -> DataFusionError {
+-    DataFusionError::External(Box::new(error))
+-}
+-
+-#[async_trait]
+-impl TableProvider for IcebergTableProvider {
+-    fn schema(&self) -> SchemaRef {
+-        self.schema.clone()
+-    }
+-
+-    fn table_type(&self) -> TableType {
+-        TableType::Base
+-    }
+-
+-    async fn scan(
+-        &self,
+-        state: &dyn Session,
+-        projection: Option<&Vec<usize>>,
+-        filters: &[Expr],
+-        _limit: Option<usize>,
+-    ) -> Result<Arc<dyn ExecutionPlan>> {
+-        let schema = match projection {
+-            Some(indices) => Arc::new(self.schema.project(indices)?),
+-            None => self.schema.clone(),
+-        };
+-        let mut builder = self
+-            .table
+-            .scan()
+-            .select(schema.fields().iter().map(|f| f.name()));
+-        if let Some(predicate) = filters
+-            .iter()
+-            .filter_map(|expr| predicate::predicate(expr, self.table.metadata().current_schema()))
+-            .reduce(|a, b| a.and(b))
+-        {
+-            builder = builder.with_filter(predicate);
+-        }
+-        let scan = builder.build().map_err(external)?;
+-        let tasks = futures::TryStreamExt::try_collect::<Vec<_>>(
+-            scan.plan_files().await.map_err(external)?,
+-        )
+-        .await
+-        .map_err(external)?;
+-        Ok(Arc::new(scan::IcebergScan::try_new(
+-            self.table.clone(),
+-            schema,
+-            tasks,
+-            state.config().target_partitions(),
+-            state.config().batch_size(),
+-            !filters.is_empty(),
+-        )?))
+-    }
+-
+-    fn supports_filters_pushdown(
+-        &self,
+-        filters: &[&Expr],
+-    ) -> Result<Vec<TableProviderFilterPushDown>> {
+-        Ok(filters
+-            .iter()
+-            .map(|expr| {
+-                if predicate::predicate(expr, self.table.metadata().current_schema()).is_some() {
+-                    TableProviderFilterPushDown::Inexact
+-                } else {
+-                    TableProviderFilterPushDown::Unsupported
+-                }
+-            })
+-            .collect())
+-    }
+-
+-    fn statistics(&self) -> Option<Statistics> {
+-        let snapshot = self.table.metadata().current_snapshot()?;
+-        let summary = &snapshot.summary().additional_properties;
+-        let mut statistics = Statistics::new_unknown(&self.schema);
+-        statistics.num_rows = summary
+-            .get("total-records")
+-            .and_then(|value| value.parse().ok())
+-            .map_or(Precision::Absent, Precision::Inexact);
+-        statistics::output_bytes(&mut statistics, &self.schema);
+-        Some(statistics)
+-    }
+-}
+diff --git a/crates/integrations/datafusion/src/predicate.rs b/crates/integrations/datafusion/src/predicate.rs
+deleted file mode 100644
+index b660ffc7..00000000
+--- a/crates/integrations/datafusion/src/predicate.rs
++++ /dev/null
+@@ -1,317 +0,0 @@
+-// Licensed to the Apache Software Foundation (ASF) under one
+-// or more contributor license agreements.  See the NOTICE file
+-// distributed with this work for additional information
+-// regarding copyright ownership.  The ASF licenses this file
+-// to you under the Apache License, Version 2.0 (the
+-// "License"); you may not use this file except in compliance
+-// with the License.  You may obtain a copy of the License at
+-//
+-//   http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing,
+-// software distributed under the License is distributed on an
+-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+-// KIND, either express or implied.  See the License for the
+-// specific language governing permissions and limitations
+-// under the License.
+-
+-use datafusion::logical_expr::{Expr, Operator};
+-use datafusion::scalar::ScalarValue;
+-use iceberg::expr::{BinaryExpression, Predicate, PredicateOperator, Reference};
+-use iceberg::spec::{Datum, PrimitiveType, Schema, Type};
+-
+-pub(crate) fn predicate(expr: &Expr, schema: &Schema) -> Option<Predicate> {
+-    convert(expr, schema, true)
+-}
+-
+-fn convert(expr: &Expr, schema: &Schema, partial_conjunction: bool) -> Option<Predicate> {
+-    match expr {
+-        Expr::BinaryExpr(binary) if binary.op == Operator::And => {
+-            let left = convert(&binary.left, schema, partial_conjunction);
+-            let right = convert(&binary.right, schema, partial_conjunction);
+-            match (left, right) {
+-                (Some(left), Some(right)) => Some(left.and(right)),
+-                (left, right) if partial_conjunction => left.or(right),
+-                _ => None,
+-            }
+-        }
+-        Expr::BinaryExpr(binary) if binary.op == Operator::Or => Some(
+-            convert(&binary.left, schema, partial_conjunction)?.or(convert(
+-                &binary.right,
+-                schema,
+-                partial_conjunction,
+-            )?),
+-        ),
+-        Expr::BinaryExpr(binary) => comparison(&binary.left, binary.op, &binary.right, schema),
+-        // Dropping a conjunct below NOT can discard rows that satisfy the original filter.
+-        Expr::Not(inner) => Some(!convert(inner, schema, false)?),
+-        Expr::Column(_) => Some(reference(expr, schema)?.equal_to(Datum::bool(true))),
+-        Expr::IsNull(inner) => Some(reference(inner, schema)?.is_null()),
+-        Expr::IsNotNull(inner) => Some(reference(inner, schema)?.is_not_null()),
+-        Expr::Between(between) => {
+-            let column = reference(&between.expr, schema)?;
+-            let low = literal(&between.low)?;
+-            let high = literal(&between.high)?;
+-            Some(if between.negated {
+-                column.clone().less_than(low).or(column.greater_than(high))
+-            } else {
+-                column
+-                    .clone()
+-                    .greater_than_or_equal_to(low)
+-                    .and(column.less_than_or_equal_to(high))
+-            })
+-        }
+-        Expr::InList(list) => {
+-            let column = reference(&list.expr, schema)?;
+-            let literals = list.list.iter().map(literal).collect::<Option<Vec<_>>>()?;
+-            Some(if list.negated {
+-                column.is_not_in(literals)
+-            } else {
+-                column.is_in(literals)
+-            })
+-        }
+-        Expr::Like(like) if like.escape_char.is_none() && !like.case_insensitive => {
+-            let column = reference(&like.expr, schema)?;
+-            let pattern = scalar(&like.pattern)?;
+-            let pattern = match &pattern {
+-                ScalarValue::Utf8(Some(value))
+-                | ScalarValue::Utf8View(Some(value))
+-                | ScalarValue::LargeUtf8(Some(value)) => value,
+-                _ => return None,
+-            };
+-            let prefix = pattern.strip_suffix('%')?;
+-            if prefix.contains(['%', '_', '\\']) {
+-                return None;
+-            }
+-            Some(if like.negated {
+-                column.not_starts_with(Datum::string(prefix))
+-            } else {
+-                column.starts_with(Datum::string(prefix))
+-            })
+-        }
+-        _ => None,
+-    }
+-}
+-
+-fn reference(expr: &Expr, schema: &Schema) -> Option<Reference> {
+-    match expr {
+-        Expr::Column(column) => {
+-            let field = schema
+-                .as_struct()
+-                .fields()
+-                .iter()
+-                .find(|field| field.name == column.name)?;
+-            // Physical predicates run before defaults and nested reconstruction. Iceberg's
+-            // NaN bounds also differ from DataFusion's total-order floating comparisons.
+-            if !matches!(field.field_type.as_ref(), Type::Primitive(primitive)
+-                if !matches!(primitive, PrimitiveType::Float | PrimitiveType::Double))
+-                || field.initial_default.is_some()
+-            {
+-                return None;
+-            }
+-            Some(Reference::new(&column.name))
+-        }
+-        _ => None,
+-    }
+-}
+-
+-fn comparison(left: &Expr, op: Operator, right: &Expr, schema: &Schema) -> Option<Predicate> {
+-    let (column, value, reverse) = if let Some(column) = reference(left, schema) {
+-        (column, literal(right)?, false)
+-    } else {
+-        (reference(right, schema)?, literal(left)?, true)
+-    };
+-    let op = match (op, reverse) {
+-        (Operator::Eq, _) => PredicateOperator::Eq,
+-        (Operator::NotEq, _) => PredicateOperator::NotEq,
+-        (Operator::Lt, false) | (Operator::Gt, true) => PredicateOperator::LessThan,
+-        (Operator::LtEq, false) | (Operator::GtEq, true) => PredicateOperator::LessThanOrEq,
+-        (Operator::Gt, false) | (Operator::Lt, true) => PredicateOperator::GreaterThan,
+-        (Operator::GtEq, false) | (Operator::LtEq, true) => PredicateOperator::GreaterThanOrEq,
+-        _ => return None,
+-    };
+-    Some(Predicate::Binary(BinaryExpression::new(op, column, value)))
+-}
+-
+-fn scalar(expr: &Expr) -> Option<ScalarValue> {
+-    match expr {
+-        Expr::Literal(value, _) => Some(value.clone()),
+-        Expr::Cast(cast) => scalar(&cast.expr)?.cast_to(cast.field.data_type()).ok(),
+-        _ => None,
+-    }
+-}
+-
+-fn literal(expr: &Expr) -> Option<Datum> {
+-    match scalar(expr)? {
+-        ScalarValue::Boolean(Some(value)) => Some(Datum::bool(value)),
+-        ScalarValue::Int8(Some(value)) => Some(Datum::int(i32::from(value))),
+-        ScalarValue::Int16(Some(value)) => Some(Datum::int(i32::from(value))),
+-        ScalarValue::Int32(Some(value)) => Some(Datum::int(value)),
+-        ScalarValue::Int64(Some(value)) => Some(Datum::long(value)),
+-        ScalarValue::Float32(Some(value)) if value.is_finite() => Some(Datum::float(value)),
+-        ScalarValue::Float64(Some(value)) if value.is_finite() => Some(Datum::double(value)),
+-        ScalarValue::Utf8(Some(value))
+-        | ScalarValue::Utf8View(Some(value))
+-        | ScalarValue::LargeUtf8(Some(value)) => Some(Datum::string(value)),
+-        ScalarValue::Binary(Some(value))
+-        | ScalarValue::BinaryView(Some(value))
+-        | ScalarValue::LargeBinary(Some(value)) => Some(Datum::binary(value)),
+-        ScalarValue::Date32(Some(value)) => Some(Datum::date(value)),
+-        ScalarValue::Date64(Some(value)) if value % 86_400_000 == 0 => {
+-            Some(Datum::date(i32::try_from(value / 86_400_000).ok()?))
+-        }
+-        ScalarValue::TimestampMicrosecond(Some(value), timezone) => Some(if timezone.is_some() {
+-            Datum::timestamptz_micros(value)
+-        } else {
+-            Datum::timestamp_micros(value)
+-        }),
+-        ScalarValue::TimestampNanosecond(Some(value), timezone) => Some(if timezone.is_some() {
+-            Datum::timestamptz_nanos(value)
+-        } else {
+-            Datum::timestamp_nanos(value)
+-        }),
+-        ScalarValue::Decimal128(Some(value), _, scale) if (0..=38).contains(&scale) => {
+-            Datum::decimal_from_str(format!("{value}e-{scale}")).ok()
+-        }
+-        _ => None,
+-    }
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use datafusion::arrow::datatypes::DataType;
+-    use datafusion::logical_expr::expr::{Between, InList};
+-    use datafusion::logical_expr::{Expr, cast, col, lit};
+-    use datafusion::scalar::ScalarValue;
+-    use iceberg::expr::{Predicate, Reference};
+-    use iceberg::spec::{Datum, Literal, NestedField, PrimitiveType, Schema, StructType, Type};
+-
+-    fn schema() -> Schema {
+-        Schema::builder()
+-            .with_fields(vec![
+-                NestedField::optional(1, "a", PrimitiveType::Int.into()).into(),
+-                NestedField::optional(2, "b", PrimitiveType::Int.into()).into(),
+-                NestedField::optional(3, "date", PrimitiveType::Date.into()).into(),
+-                NestedField::optional(4, "price", Type::decimal(12, 3).unwrap()).into(),
+-            ])
+-            .build()
+-            .unwrap()
+-    }
+-
+-    fn predicate(expr: &Expr) -> Option<Predicate> {
+-        super::predicate(expr, &schema())
+-    }
+-
+-    #[test]
+-    fn unsafe_physical_predicates_keep_safe_conjuncts_only() {
+-        let schema = Schema::builder()
+-            .with_fields(vec![
+-                NestedField::optional(1, "a", PrimitiveType::Int.into()).into(),
+-                NestedField::optional(2, "defaulted", PrimitiveType::Int.into())
+-                    .with_initial_default(Literal::int(7))
+-                    .into(),
+-                NestedField::optional(
+-                    3,
+-                    "nested",
+-                    Type::Struct(StructType::new(vec![
+-                        NestedField::optional(4, "value", PrimitiveType::Int.into()).into(),
+-                    ])),
+-                )
+-                .into(),
+-                NestedField::optional(5, "floating", PrimitiveType::Double.into()).into(),
+-            ])
+-            .build()
+-            .unwrap();
+-        let safe = col("a").gt(lit(4_i32));
+-        for unsupported in [
+-            col("defaulted").eq(lit(7_i32)),
+-            col("nested").is_not_null(),
+-            col("nested.value").is_null(),
+-            col("floating").gt(lit(1_f64)),
+-            col("floating").is_not_null(),
+-        ] {
+-            assert_eq!(super::predicate(&unsupported, &schema), None);
+-            assert_eq!(
+-                super::predicate(&safe.clone().and(unsupported.clone()), &schema),
+-                Some(Reference::new("a").greater_than(Datum::int(4)))
+-            );
+-            assert_eq!(
+-                super::predicate(&safe.clone().or(unsupported.clone()), &schema),
+-                None
+-            );
+-            assert_eq!(
+-                super::predicate(&Expr::Not(Box::new(safe.clone().and(unsupported))), &schema),
+-                None
+-            );
+-        }
+-    }
+-
+-    #[test]
+-    fn partial_conjunctions_do_not_escape_disjunction_or_negation() {
+-        let supported = col("a").gt(lit(4_i32));
+-        let unsupported = (col("b") + lit(1_i32)).gt(lit(3_i32));
+-        let expected = Some(Reference::new("a").greater_than(Datum::int(4)));
+-        assert_eq!(
+-            predicate(&supported.clone().and(unsupported.clone())),
+-            expected
+-        );
+-        assert_eq!(predicate(&supported.clone().or(unsupported.clone())), None);
+-        assert_eq!(
+-            predicate(&Expr::Not(Box::new(supported.and(unsupported)))),
+-            None
+-        );
+-    }
+-
+-    #[test]
+-    fn comparisons_reverse_operands_without_discarding_column_casts() {
+-        assert_eq!(
+-            predicate(&lit(7_i64).lt(col("a"))),
+-            Some(Reference::new("a").greater_than(Datum::long(7)))
+-        );
+-        assert_eq!(
+-            predicate(&cast(col("a"), DataType::Int32).eq(lit(7_i32))),
+-            None
+-        );
+-    }
+-
+-    #[test]
+-    fn date_decimal_ranges_preserve_values() {
+-        let date_range = Expr::Between(Between::new(
+-            Box::new(col("date")),
+-            false,
+-            Box::new(lit(ScalarValue::Date32(Some(-1)))),
+-            Box::new(lit(ScalarValue::Date32(Some(10)))),
+-        ));
+-        assert_eq!(
+-            predicate(&date_range),
+-            Some(
+-                Reference::new("date")
+-                    .greater_than_or_equal_to(Datum::date(-1))
+-                    .and(Reference::new("date").less_than_or_equal_to(Datum::date(10)))
+-            )
+-        );
+-        assert_eq!(
+-            predicate(&col("price").eq(lit(ScalarValue::Decimal128(Some(-12345), 12, 3)))),
+-            Some(Reference::new("price").equal_to(Datum::decimal_from_str("-12.345").unwrap()))
+-        );
+-    }
+-
+-    #[test]
+-    fn null_lists_and_unrepresentable_literals_stay_residual() {
+-        for negated in [false, true] {
+-            let list = Expr::InList(InList::new(
+-                Box::new(col("a")),
+-                vec![lit(1_i32), lit(ScalarValue::Int32(None))],
+-                negated,
+-            ));
+-            assert_eq!(predicate(&list), None);
+-        }
+-        for value in [
+-            ScalarValue::Float64(Some(f64::NAN)),
+-            ScalarValue::Date64(Some(-1)),
+-            ScalarValue::Decimal128(Some(1), 3, -1),
+-        ] {
+-            assert_eq!(predicate(&col("a").eq(lit(value))), None);
+-        }
+-    }
+-}
+diff --git a/crates/integrations/datafusion/src/scan.rs b/crates/integrations/datafusion/src/scan.rs
+deleted file mode 100644
+index dcd8b657..00000000
+--- a/crates/integrations/datafusion/src/scan.rs
++++ /dev/null
+@@ -1,304 +0,0 @@
+-// Licensed to the Apache Software Foundation (ASF) under one
+-// or more contributor license agreements.  See the NOTICE file
+-// distributed with this work for additional information
+-// regarding copyright ownership.  The ASF licenses this file
+-// to you under the Apache License, Version 2.0 (the
+-// "License"); you may not use this file except in compliance
+-// with the License.  You may obtain a copy of the License at
+-//
+-//   http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing,
+-// software distributed under the License is distributed on an
+-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+-// KIND, either express or implied.  See the License for the
+-// specific language governing permissions and limitations
+-// under the License.
+-
+-use std::fmt;
+-use std::sync::Arc;
+-
+-use datafusion::arrow::datatypes::SchemaRef;
+-use datafusion::common::stats::Precision;
+-use datafusion::common::tree_node::TreeNodeRecursion;
+-use datafusion::common::{DataFusionError, Result, Statistics};
+-use datafusion::config::ConfigOptions;
+-use datafusion::execution::TaskContext;
+-use datafusion::physical_expr::{DynamicFilterTracking, EquivalenceProperties, PhysicalExpr};
+-use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
+-use datafusion::physical_plan::filter_pushdown::{
+-    ChildPushdownResult, FilterPushdownPhase, FilterPushdownPropagation, PushedDown,
+-};
+-use datafusion::physical_plan::metrics::{
+-    BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet,
+-};
+-use datafusion::physical_plan::statistics::StatisticsArgs;
+-use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
+-use datafusion::physical_plan::{
+-    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
+-    SendableRecordBatchStream,
+-};
+-use futures::{StreamExt, TryStreamExt};
+-use iceberg::scan::FileScanTask;
+-use iceberg::table::Table;
+-
+-use crate::{external, statistics::output_bytes};
+-
+-mod dynamic_filter;
+-
+-#[derive(Debug, Clone)]
+-pub(crate) struct IcebergScan {
+-    table: Table,
+-    partitions: Vec<Vec<FileScanTask>>,
+-    properties: Arc<PlanProperties>,
+-    batch_size: usize,
+-    metrics: ExecutionPlanMetricsSet,
+-    statistics: Arc<Statistics>,
+-    dynamic_filters: Vec<Arc<dyn PhysicalExpr>>,
+-}
+-
+-fn should_read_in_background(partitions: usize) -> bool {
+-    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+-        return true;
+-    };
+-    let available_cores = std::thread::available_parallelism().map_or(1, usize::from);
+-    runtime.metrics().num_workers() < partitions.min(available_cores)
+-}
+-
+-impl IcebergScan {
+-    pub(crate) fn try_new(
+-        table: Table,
+-        schema: SchemaRef,
+-        tasks: Vec<FileScanTask>,
+-        partitions: usize,
+-        batch_size: usize,
+-        filtered: bool,
+-    ) -> Result<Self> {
+-        let partitions = partitions.max(2);
+-        let total_bytes = tasks
+-            .iter()
+-            .fold(0u64, |sum, task| sum.saturating_add(task.length()));
+-        let mut statistics = Statistics::new_unknown(&schema);
+-        statistics.num_rows = tasks.iter().fold(Precision::Exact(0usize), |sum, task| {
+-            let rows = task
+-                .record_count()
+-                .and_then(|rows| usize::try_from(rows).ok());
+-            sum.add(&rows.map_or(Precision::Absent, Precision::Exact))
+-        });
+-        if filtered
+-            || tasks
+-                .iter()
+-                .any(|task| task.predicate().is_some() || !task.deletes().is_empty())
+-        {
+-            statistics.num_rows = statistics.num_rows.to_inexact();
+-        }
+-        output_bytes(&mut statistics, &schema);
+-        let target_bytes = total_bytes.div_ceil(partitions as u64).max(1);
+-        let mut groups = vec![Vec::new(); partitions];
+-        let mut partition = 0;
+-        let mut partition_bytes = 0;
+-        for task in tasks {
+-            if task.data_file_format() != iceberg::spec::DataFileFormat::Parquet {
+-                return Err(DataFusionError::NotImplemented(
+-                    "Iceberg DataFusion supports only Parquet data files".into(),
+-                ));
+-            }
+-            let end = task.start().checked_add(task.length()).ok_or_else(|| {
+-                DataFusionError::Plan("Iceberg task byte range overflows u64".into())
+-            })?;
+-            let mut start = task.start();
+-            while start < end {
+-                if partition_bytes == target_bytes {
+-                    partition += 1;
+-                    partition_bytes = 0;
+-                }
+-                let length = (target_bytes - partition_bytes).min(end - start);
+-                groups
+-                    .get_mut(partition)
+-                    .ok_or_else(|| {
+-                        DataFusionError::Plan("Iceberg scan partition byte budget overflow".into())
+-                    })?
+-                    .push(
+-                        task.clone()
+-                            .with_byte_range(start, length)
+-                            .map_err(external)?,
+-                    );
+-                start += length;
+-                partition_bytes += length;
+-            }
+-        }
+-        Ok(Self {
+-            table,
+-            partitions: groups,
+-            properties: Arc::new(PlanProperties::new(
+-                EquivalenceProperties::new(schema),
+-                Partitioning::UnknownPartitioning(partitions),
+-                EmissionType::Incremental,
+-                Boundedness::Bounded,
+-            )),
+-            batch_size,
+-            metrics: ExecutionPlanMetricsSet::new(),
+-            statistics: Arc::new(statistics),
+-            dynamic_filters: Vec::new(),
+-        })
+-    }
+-}
+-
+-impl DisplayAs for IcebergScan {
+-    fn fmt_as(&self, _: DisplayFormatType, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+-        write!(
+-            f,
+-            "IcebergScan: partitions={}, tasks={}, dynamic_filters={}",
+-            self.partitions.len(),
+-            self.partitions.iter().map(Vec::len).sum::<usize>(),
+-            self.dynamic_filters.len(),
+-        )
+-    }
+-}
+-
+-impl ExecutionPlan for IcebergScan {
+-    fn name(&self) -> &str {
+-        "IcebergScan"
+-    }
+-    fn properties(&self) -> &Arc<PlanProperties> {
+-        &self.properties
+-    }
+-    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+-        vec![]
+-    }
+-    fn apply_expressions(
+-        &self,
+-        visitor: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> Result<TreeNodeRecursion>,
+-    ) -> Result<TreeNodeRecursion> {
+-        datafusion::physical_plan::apply_expression_roots(self.dynamic_filters.iter(), visitor)
+-    }
+-    fn handle_child_pushdown_result(
+-        &self,
+-        phase: FilterPushdownPhase,
+-        child_pushdown_result: ChildPushdownResult,
+-        _: &ConfigOptions,
+-    ) -> Result<FilterPushdownPropagation<Arc<dyn ExecutionPlan>>> {
+-        let filters = child_pushdown_result.parent_filters;
+-        // Dynamic filters can be skipped for files whose fields cannot be adapted; retain every residual.
+-        let propagation = FilterPushdownPropagation::with_parent_pushdown_result(vec![
+-                PushedDown::No;
+-                filters.len()
+-            ]);
+-        if phase != FilterPushdownPhase::Post {
+-            return Ok(propagation);
+-        }
+-        let mut node = self.clone();
+-        for filter in filters {
+-            if DynamicFilterTracking::classify(&filter.filter).contains_dynamic_filter()
+-                && !node
+-                    .dynamic_filters
+-                    .iter()
+-                    .any(|existing| existing.eq(&filter.filter))
+-            {
+-                node.dynamic_filters.push(filter.filter);
+-            }
+-        }
+-        if node.dynamic_filters.len() == self.dynamic_filters.len() {
+-            return Ok(propagation);
+-        }
+-        let mut statistics = self.statistics.as_ref().clone();
+-        statistics.num_rows = statistics.num_rows.to_inexact();
+-        node.statistics = Arc::new(statistics);
+-        Ok(propagation.with_updated_node(Arc::new(node)))
+-    }
+-    fn with_new_children(
+-        self: Arc<Self>,
+-        children: Vec<Arc<dyn ExecutionPlan>>,
+-    ) -> Result<Arc<dyn ExecutionPlan>> {
+-        if !children.is_empty() {
+-            return Err(DataFusionError::Plan("IcebergScan is a leaf plan".into()));
+-        }
+-        Ok(self)
+-    }
+-    fn execute(&self, partition: usize, _: Arc<TaskContext>) -> Result<SendableRecordBatchStream> {
+-        let tasks = self
+-            .partitions
+-            .get(partition)
+-            .ok_or_else(|| {
+-                DataFusionError::Execution(format!("Invalid Iceberg partition {partition}"))
+-            })?
+-            .clone();
+-        let baseline = BaselineMetrics::new(&self.metrics, partition);
+-        let compute = baseline.elapsed_compute().clone();
+-        let mut reader = self
+-            .table
+-            .reader_builder()
+-            .with_batch_size(self.batch_size)
+-            .with_data_file_concurrency_limit(1)
+-            .with_background_reads(should_read_in_background(self.partitions.len()))
+-            .with_compute_time_observer(move |elapsed| compute.add_duration(elapsed));
+-        if !self.dynamic_filters.is_empty() {
+-            let filters = self.dynamic_filters.clone();
+-            let schema = self.schema();
+-            let pruned =
+-                MetricBuilder::new(&self.metrics).counter("dynamic_filter_rows_pruned", partition);
+-            reader = reader.with_row_filter_factory(move |task, physical_schema, metadata| {
+-                dynamic_filter::row_filter(
+-                    &filters,
+-                    &schema,
+-                    task,
+-                    physical_schema,
+-                    metadata,
+-                    &pruned,
+-                )
+-                .map_err(|error| {
+-                    iceberg::Error::new(
+-                        iceberg::ErrorKind::Unexpected,
+-                        "Cannot prepare dynamic Parquet filter",
+-                    )
+-                    .with_source(error)
+-                })
+-            });
+-        }
+-        let native = reader
+-            .build()
+-            .read(futures::stream::iter(tasks.into_iter().map(Ok)).boxed())
+-            .map_err(external)?;
+-        let io_metrics = native.metrics().clone();
+-        let bytes = MetricBuilder::new(&self.metrics).counter("bytes_scanned", partition);
+-        let mut bytes_recorded = 0;
+-        let mut input = native.stream().map_err(external);
+-        let stream = futures::stream::poll_fn(move |cx| {
+-            let timer = baseline.elapsed_compute().timer();
+-            let poll = input.poll_next_unpin(cx);
+-            drop(timer);
+-            let bytes_read = io_metrics.bytes_read();
+-            bytes.add((bytes_read - bytes_recorded) as usize);
+-            bytes_recorded = bytes_read;
+-            baseline.record_poll(poll)
+-        });
+-        Ok(Box::pin(RecordBatchStreamAdapter::new(
+-            self.schema(),
+-            stream,
+-        )))
+-    }
+-    fn metrics(&self) -> Option<MetricsSet> {
+-        Some(self.metrics.clone_inner())
+-    }
+-    fn statistics_from_inputs(
+-        &self,
+-        _: &[Arc<Statistics>],
+-        args: &StatisticsArgs,
+-    ) -> Result<Arc<Statistics>> {
+-        match args.partition() {
+-            None => Ok(self.statistics.clone()),
+-            Some(partition) => {
+-                let tasks = self.partitions.get(partition).ok_or_else(|| {
+-                    DataFusionError::Plan(format!("Invalid Iceberg partition {partition}"))
+-                })?;
+-                let schema = self.schema();
+-                let mut statistics = Statistics::new_unknown(&schema);
+-                if tasks.is_empty() {
+-                    statistics.num_rows = Precision::Exact(0);
+-                }
+-                output_bytes(&mut statistics, &schema);
+-                Ok(Arc::new(statistics))
+-            }
+-        }
+-    }
+-}
+diff --git a/crates/integrations/datafusion/src/scan/dynamic_filter.rs b/crates/integrations/datafusion/src/scan/dynamic_filter.rs
+deleted file mode 100644
+index 86cca6e5..00000000
+--- a/crates/integrations/datafusion/src/scan/dynamic_filter.rs
++++ /dev/null
+@@ -1,497 +0,0 @@
+-// Licensed to the Apache Software Foundation (ASF) under one
+-// or more contributor license agreements.  See the NOTICE file
+-// distributed with this work for additional information
+-// regarding copyright ownership.  The ASF licenses this file
+-// to you under the Apache License, Version 2.0 (the
+-// "License"); you may not use this file except in compliance
+-// with the License.  You may obtain a copy of the License at
+-//
+-//   http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing,
+-// software distributed under the License is distributed on an
+-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+-// KIND, either express or implied.  See the License for the
+-// specific language governing permissions and limitations
+-// under the License.
+-
+-use std::collections::HashMap;
+-use std::sync::Arc;
+-
+-use datafusion::arrow::datatypes::{DataType, FieldRef, SchemaRef};
+-use datafusion::arrow::error::ArrowError;
+-use datafusion::arrow::record_batch::RecordBatch;
+-use datafusion::common::Result;
+-use datafusion::common::cast::as_boolean_array;
+-use datafusion::common::tree_node::{Transformed, TransformedResult, TreeNode};
+-use datafusion::logical_expr::{ColumnarValue, Operator};
+-use datafusion::physical_expr::expressions::{
+-    BinaryExpr, CastExpr, Column, InListExpr, IsNotNullExpr, IsNullExpr, Literal, NotExpr,
+-};
+-use datafusion::physical_expr::utils::collect_columns;
+-use datafusion::physical_expr::{DynamicFilterTracking, PhysicalExpr};
+-use datafusion::physical_expr_common::physical_expr::snapshot_physical_expr;
+-use datafusion::physical_plan::metrics::Count;
+-use datafusion::scalar::ScalarValue;
+-use iceberg::scan::FileScanTask;
+-use parquet::arrow::arrow_reader::{ArrowPredicate, ArrowPredicateFn, RowFilter};
+-use parquet::arrow::{PARQUET_FIELD_ID_META_KEY, ProjectionMask};
+-use parquet::file::metadata::ParquetMetaData;
+-
+-const MAX_DYNAMIC_LITERAL_VALUES: usize = 150;
+-
+-struct AdaptedFilter {
+-    predicate: Arc<dyn PhysicalExpr>,
+-    leaves: Vec<usize>,
+-}
+-
+-struct LiveCheapFilter {
+-    live: Arc<dyn PhysicalExpr>,
+-    tracking: DynamicFilterTracking,
+-    cached: Option<Arc<dyn PhysicalExpr>>,
+-}
+-
+-impl LiveCheapFilter {
+-    fn new(live: Arc<dyn PhysicalExpr>) -> Result<Option<Self>> {
+-        let tracking = DynamicFilterTracking::classify(&live);
+-        let cached = cheap_predicate(&snapshot_physical_expr(live.clone())?, true);
+-        if !matches!(tracking, DynamicFilterTracking::Watching(_)) && cached.is_none() {
+-            return Ok(None);
+-        }
+-        Ok(Some(Self {
+-            live,
+-            tracking,
+-            cached,
+-        }))
+-    }
+-
+-    fn evaluate(&mut self, batch: &RecordBatch) -> Result<ColumnarValue> {
+-        if self
+-            .tracking
+-            .watcher()
+-            .is_some_and(|watcher| watcher.changed())
+-        {
+-            self.cached = cheap_predicate(&snapshot_physical_expr(self.live.clone())?, true);
+-        }
+-        match &self.cached {
+-            Some(predicate) => predicate.evaluate(batch),
+-            None => Ok(ColumnarValue::Scalar(ScalarValue::Boolean(Some(true)))),
+-        }
+-    }
+-}
+-
+-fn cheap_predicate(
+-    expr: &Arc<dyn PhysicalExpr>,
+-    partial_conjunction: bool,
+-) -> Option<Arc<dyn PhysicalExpr>> {
+-    if let Some(binary) = expr.downcast_ref::<BinaryExpr>() {
+-        return match binary.op() {
+-            Operator::And => {
+-                let left = cheap_predicate(binary.left(), partial_conjunction);
+-                let right = cheap_predicate(binary.right(), partial_conjunction);
+-                match (left, right) {
+-                    (Some(left), Some(right)) => {
+-                        Some(Arc::new(BinaryExpr::new(left, Operator::And, right)))
+-                    }
+-                    (left, right) if partial_conjunction => left.or(right),
+-                    _ => None,
+-                }
+-            }
+-            Operator::Or => {
+-                let left = cheap_predicate(binary.left(), false)?;
+-                let right = cheap_predicate(binary.right(), false)?;
+-                Some(Arc::new(BinaryExpr::new(left, Operator::Or, right)))
+-            }
+-            Operator::Eq
+-            | Operator::NotEq
+-            | Operator::Lt
+-            | Operator::LtEq
+-            | Operator::Gt
+-            | Operator::GtEq
+-                if cheap_scalar(binary.left()) && cheap_scalar(binary.right()) =>
+-            {
+-                Some(expr.clone())
+-            }
+-            _ => None,
+-        };
+-    }
+-    if let Some(literal) = expr.downcast_ref::<Literal>() {
+-        return match literal.value() {
+-            ScalarValue::Boolean(Some(false) | None) => Some(expr.clone()),
+-            _ => None,
+-        };
+-    }
+-    if let Some(list) = expr.downcast_ref::<InListExpr>() {
+-        return (list.len() <= MAX_DYNAMIC_LITERAL_VALUES
+-            && cheap_scalar(list.expr())
+-            && list.list().iter().all(|value| value.is::<Literal>()))
+-        .then(|| expr.clone());
+-    }
+-    if let Some(is_null) = expr.downcast_ref::<IsNullExpr>() {
+-        return cheap_scalar(is_null.arg()).then(|| expr.clone());
+-    }
+-    if let Some(is_not_null) = expr.downcast_ref::<IsNotNullExpr>() {
+-        return cheap_scalar(is_not_null.arg()).then(|| expr.clone());
+-    }
+-    if let Some(not) = expr.downcast_ref::<NotExpr>() {
+-        let inner = cheap_predicate(not.arg(), false)?;
+-        return Some(Arc::new(NotExpr::new(inner)));
+-    }
+-    None
+-}
+-
+-fn cheap_scalar(expr: &Arc<dyn PhysicalExpr>) -> bool {
+-    expr.is::<Column>() || expr.is::<Literal>()
+-}
+-
+-pub(super) fn row_filter(
+-    filters: &[Arc<dyn PhysicalExpr>],
+-    logical_schema: &SchemaRef,
+-    task: &FileScanTask,
+-    physical_schema: &SchemaRef,
+-    metadata: &Arc<ParquetMetaData>,
+-    pruned: &Count,
+-) -> Result<Option<RowFilter>> {
+-    let mut predicates: Vec<Box<dyn ArrowPredicate>> = Vec::new();
+-    for filter in filters {
+-        let Some(AdaptedFilter {
+-            predicate: filter,
+-            leaves,
+-        }) = adapt(filter, logical_schema, task, physical_schema, metadata)?
+-        else {
+-            continue;
+-        };
+-        let Some(mut filter) = LiveCheapFilter::new(filter)? else {
+-            continue;
+-        };
+-        let projection = ProjectionMask::leaves(metadata.file_metadata().schema_descr(), leaves);
+-        let pruned = pruned.clone();
+-        predicates.push(Box::new(ArrowPredicateFn::new(projection, move |batch| {
+-            filter
+-                .evaluate(&batch)
+-                .and_then(|value| value.into_array(batch.num_rows()))
+-                .and_then(|array| {
+-                    let matches = as_boolean_array(&array)?.clone();
+-                    pruned.add(matches.len() - matches.true_count());
+-                    Ok(matches)
+-                })
+-                .map_err(|error| ArrowError::ExternalError(Box::new(error)))
+-        })));
+-    }
+-    Ok((!predicates.is_empty()).then(|| RowFilter::new(predicates)))
+-}
+-
+-fn adapt(
+-    filter: &Arc<dyn PhysicalExpr>,
+-    logical_schema: &SchemaRef,
+-    task: &FileScanTask,
+-    physical_schema: &SchemaRef,
+-    metadata: &ParquetMetaData,
+-) -> Result<Option<AdaptedFilter>> {
+-    let parquet_schema = metadata.file_metadata().schema_descr();
+-    let mut fields: HashMap<Column, (usize, FieldRef)> = HashMap::new();
+-    let mut roots = Vec::new();
+-    let mut leaves = Vec::new();
+-    // Dynamic nodes declare their columns even while their current expression is TRUE.
+-    for column in collect_columns(filter) {
+-        let Some(logical) = logical_schema.fields().get(column.index()) else {
+-            return Ok(None);
+-        };
+-        if logical.name() != column.name() {
+-            return Ok(None);
+-        }
+-        let Some(id) = field_id(logical) else {
+-            return Ok(None);
+-        };
+-        if !task
+-            .schema()
+-            .as_struct()
+-            .fields()
+-            .iter()
+-            .any(|field| field.id == id && field.field_type.is_primitive())
+-        {
+-            return Ok(None);
+-        }
+-        let mut matching = physical_schema
+-            .fields()
+-            .iter()
+-            .enumerate()
+-            .filter(|(_, field)| field_id(field) == Some(id));
+-        let Some((root, physical)) = matching.next() else {
+-            return Ok(None);
+-        };
+-        if matching.next().is_some() || !lossless_type(physical.data_type(), logical.data_type()) {
+-            return Ok(None);
+-        }
+-        let mut matching_leaves = (0..parquet_schema.num_columns())
+-            .filter(|&leaf| parquet_schema.get_column_root_idx(leaf) == root);
+-        let Some(leaf) = matching_leaves.next() else {
+-            return Ok(None);
+-        };
+-        if matching_leaves.next().is_some() || parquet_schema.get_column_root(leaf).is_group() {
+-            return Ok(None);
+-        }
+-        roots.push(root);
+-        leaves.push(leaf);
+-        fields.insert(column, (root, physical.clone()));
+-    }
+-    roots.sort_unstable();
+-    roots.dedup();
+-    leaves.sort_unstable();
+-    leaves.dedup();
+-    let filter = filter
+-        .clone()
+-        .transform_up(|expr| {
+-            let Some(column) = expr.downcast_ref::<Column>() else {
+-                return Ok(Transformed::no(expr));
+-            };
+-            let (root, physical) = &fields[column];
+-            let index = roots
+-                .binary_search(root)
+-                .expect("filter roots were collected from its columns");
+-            let mut replacement: Arc<dyn PhysicalExpr> =
+-                Arc::new(Column::new(physical.name(), index));
+-            let logical = &logical_schema.fields()[column.index()];
+-            if physical.data_type() != logical.data_type() {
+-                replacement = Arc::new(CastExpr::new_with_target_field(
+-                    replacement,
+-                    logical.clone(),
+-                    None,
+-                ));
+-            }
+-            Ok(Transformed::yes(replacement))
+-        })
+-        .data()?;
+-    Ok(Some(AdaptedFilter {
+-        predicate: filter,
+-        leaves,
+-    }))
+-}
+-
+-fn field_id(field: &datafusion::arrow::datatypes::Field) -> Option<i32> {
+-    field
+-        .metadata()
+-        .get(PARQUET_FIELD_ID_META_KEY)?
+-        .parse()
+-        .ok()
+-}
+-
+-fn lossless_type(physical: &DataType, logical: &DataType) -> bool {
+-    physical == logical
+-        || match (physical, logical) {
+-            (DataType::Int32, DataType::Int64) | (DataType::Float32, DataType::Float64) => true,
+-            (DataType::Decimal128(from, from_scale), DataType::Decimal128(to, to_scale)) => {
+-                from <= to && from_scale == to_scale
+-            }
+-            (
+-                DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View,
+-                DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View,
+-            ) => true,
+-            (
+-                DataType::Binary | DataType::LargeBinary | DataType::BinaryView,
+-                DataType::Binary | DataType::LargeBinary | DataType::BinaryView,
+-            ) => true,
+-            _ => false,
+-        }
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use std::collections::HashMap;
+-    use std::fs::File;
+-    use std::sync::Arc;
+-
+-    use datafusion::arrow::array::Int64Array;
+-    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+-    use datafusion::arrow::record_batch::RecordBatch;
+-    use datafusion::common::cast::as_boolean_array;
+-    use datafusion::logical_expr::Operator;
+-    use datafusion::physical_expr::PhysicalExpr;
+-    use datafusion::physical_expr::expressions::{
+-        BinaryExpr, CaseExpr, CastExpr, Column, DynamicFilterPhysicalExpr, InListExpr, NotExpr, lit,
+-    };
+-    use datafusion::physical_plan::metrics::Count;
+-    use iceberg::scan::FileScanTask;
+-    use iceberg::spec::{DataFileFormat, NestedField, PrimitiveType};
+-    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+-    use parquet::arrow::{ArrowWriter, PARQUET_FIELD_ID_META_KEY};
+-
+-    use super::{LiveCheapFilter, row_filter};
+-
+-    fn batch() -> RecordBatch {
+-        RecordBatch::try_new(
+-            Arc::new(Schema::new(vec![
+-                Field::new("key", DataType::Int64, true).with_metadata(HashMap::from([(
+-                    PARQUET_FIELD_ID_META_KEY.to_owned(),
+-                    "1".to_owned(),
+-                )])),
+-            ])),
+-            vec![Arc::new(Int64Array::from(vec![
+-                Some(0),
+-                Some(1),
+-                None,
+-                Some(2),
+-                Some(3),
+-            ]))],
+-        )
+-        .unwrap()
+-    }
+-
+-    fn key() -> Arc<dyn PhysicalExpr> {
+-        Arc::new(Column::new("key", 0))
+-    }
+-
+-    fn comparison(op: Operator, value: i64) -> Arc<dyn PhysicalExpr> {
+-        Arc::new(BinaryExpr::new(key(), op, lit(value)))
+-    }
+-
+-    fn unsupported_case(value: bool) -> Arc<dyn PhysicalExpr> {
+-        Arc::new(CaseExpr::try_new(None, vec![(lit(true), lit(value))], Some(lit(value))).unwrap())
+-    }
+-
+-    fn selected(state: &mut LiveCheapFilter, batch: &RecordBatch) -> Vec<Option<i64>> {
+-        let mask = state
+-            .evaluate(batch)
+-            .unwrap()
+-            .into_array(batch.num_rows())
+-            .unwrap();
+-        let mask = as_boolean_array(mask.as_ref()).unwrap();
+-        batch
+-            .column(0)
+-            .as_any()
+-            .downcast_ref::<Int64Array>()
+-            .unwrap()
+-            .iter()
+-            .zip(mask.iter())
+-            .filter_map(|(value, keep)| (keep == Some(true)).then_some(value))
+-            .collect()
+-    }
+-
+-    #[test]
+-    fn composite_filter_cache_tracks_all_live_generations() {
+-        let batch = batch();
+-        let first = Arc::new(DynamicFilterPhysicalExpr::new(vec![key()], lit(true)));
+-        let second = Arc::new(DynamicFilterPhysicalExpr::new(vec![key()], lit(true)));
+-        let root: Arc<dyn PhysicalExpr> = Arc::new(BinaryExpr::new(
+-            first.clone(),
+-            Operator::And,
+-            second.clone(),
+-        ));
+-        let mut state = LiveCheapFilter::new(root).unwrap().unwrap();
+-        assert_eq!(selected(&mut state, &batch), vec![
+-            Some(0),
+-            Some(1),
+-            None,
+-            Some(2),
+-            Some(3)
+-        ]);
+-        first.update(comparison(Operator::GtEq, 1)).unwrap();
+-        assert_eq!(selected(&mut state, &batch), vec![
+-            Some(1),
+-            Some(2),
+-            Some(3)
+-        ]);
+-        second.update(comparison(Operator::LtEq, 2)).unwrap();
+-        assert_eq!(selected(&mut state, &batch), vec![Some(1), Some(2)]);
+-        let cached = state.cached.clone().unwrap();
+-        assert_eq!(selected(&mut state, &batch), vec![Some(1), Some(2)]);
+-        assert!(Arc::ptr_eq(&cached, state.cached.as_ref().unwrap()));
+-    }
+-
+-    #[test]
+-    fn cheap_subsets_preserve_boolean_polarity_and_bound_list_cost() {
+-        let batch = batch();
+-        let lower = comparison(Operator::GtEq, 2);
+-        let conjunction: Arc<dyn PhysicalExpr> = Arc::new(BinaryExpr::new(
+-            lower.clone(),
+-            Operator::And,
+-            unsupported_case(false),
+-        ));
+-        let mut state = LiveCheapFilter::new(conjunction.clone()).unwrap().unwrap();
+-        assert_eq!(selected(&mut state, &batch), vec![Some(2), Some(3)]);
+-        let disjunction: Arc<dyn PhysicalExpr> =
+-            Arc::new(BinaryExpr::new(lower, Operator::Or, unsupported_case(true)));
+-        assert!(LiveCheapFilter::new(disjunction).unwrap().is_none());
+-        assert!(
+-            LiveCheapFilter::new(Arc::new(NotExpr::new(conjunction)))
+-                .unwrap()
+-                .is_none()
+-        );
+-        let short: Arc<dyn PhysicalExpr> = Arc::new(
+-            InListExpr::try_new_from_array(
+-                key(),
+-                Arc::new(Int64Array::from(vec![1, 3])),
+-                false,
+-                batch.schema().as_ref(),
+-            )
+-            .unwrap(),
+-        );
+-        let mut state = LiveCheapFilter::new(short).unwrap().unwrap();
+-        assert_eq!(selected(&mut state, &batch), vec![Some(1), Some(3)]);
+-        let long: Arc<dyn PhysicalExpr> = Arc::new(
+-            InListExpr::try_new_from_array(
+-                key(),
+-                Arc::new(Int64Array::from_iter_values(0..151)),
+-                false,
+-                batch.schema().as_ref(),
+-            )
+-            .unwrap(),
+-        );
+-        assert!(LiveCheapFilter::new(long).unwrap().is_none());
+-        let failing_cast: Arc<dyn PhysicalExpr> =
+-            Arc::new(CastExpr::new(lit("not_an_integer"), DataType::Int64, None));
+-        let comparison: Arc<dyn PhysicalExpr> =
+-            Arc::new(BinaryExpr::new(failing_cast, Operator::Gt, lit(1_i64)));
+-        assert!(LiveCheapFilter::new(comparison).unwrap().is_none());
+-    }
+-
+-    #[test]
+-    fn completed_expensive_filter_does_not_install_a_decoder_predicate() {
+-        let batch = batch();
+-        let root = tempfile::tempdir().unwrap();
+-        let path = root.path().join("keys.parquet");
+-        let mut writer =
+-            ArrowWriter::try_new(File::create(&path).unwrap(), batch.schema(), None).unwrap();
+-        writer.write(&batch).unwrap();
+-        writer.close().unwrap();
+-        let metadata = ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap())
+-            .unwrap()
+-            .metadata()
+-            .clone();
+-        let schema = iceberg::spec::Schema::builder()
+-            .with_fields(vec![
+-                NestedField::optional(1, "key", PrimitiveType::Long.into()).into(),
+-            ])
+-            .build()
+-            .unwrap();
+-        let task = FileScanTask::builder()
+-            .with_file_size_in_bytes(std::fs::metadata(&path).unwrap().len())
+-            .with_start(0)
+-            .with_length(0)
+-            .with_data_file_path(path.to_string_lossy().into_owned())
+-            .with_data_file_format(DataFileFormat::Parquet)
+-            .with_schema(Arc::new(schema))
+-            .with_project_field_ids(vec![1])
+-            .with_case_sensitive(true)
+-            .build()
+-            .unwrap();
+-        let dynamic = Arc::new(DynamicFilterPhysicalExpr::new(
+-            vec![key()],
+-            unsupported_case(false),
+-        ));
+-        dynamic.mark_complete();
+-        let filters: Vec<Arc<dyn PhysicalExpr>> = vec![dynamic];
+-        assert!(
+-            row_filter(
+-                &filters,
+-                &batch.schema(),
+-                &task,
+-                &batch.schema(),
+-                &metadata,
+-                &Count::new()
+-            )
+-            .unwrap()
+-            .is_none()
+-        );
+-    }
+-}
+diff --git a/crates/integrations/datafusion/src/statistics.rs b/crates/integrations/datafusion/src/statistics.rs
+deleted file mode 100644
+index b763d015..00000000
+--- a/crates/integrations/datafusion/src/statistics.rs
++++ /dev/null
+@@ -1,144 +0,0 @@
+-// Licensed to the Apache Software Foundation (ASF) under one
+-// or more contributor license agreements.  See the NOTICE file
+-// distributed with this work for additional information
+-// regarding copyright ownership.  The ASF licenses this file
+-// to you under the Apache License, Version 2.0 (the
+-// "License"); you may not use this file except in compliance
+-// with the License.  You may obtain a copy of the License at
+-//
+-//   http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing,
+-// software distributed under the License is distributed on an
+-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+-// KIND, either express or implied.  See the License for the
+-// specific language governing permissions and limitations
+-// under the License.
+-
+-use datafusion::arrow::datatypes::{DataType, Schema};
+-use datafusion::common::Statistics;
+-use datafusion::common::stats::Precision;
+-
+-pub(crate) fn output_bytes(statistics: &mut Statistics, schema: &Schema) {
+-    let rows = statistics.num_rows.get_value().copied();
+-    let mut total = rows.map(|_| 0usize);
+-    for (column, field) in statistics.column_statistics.iter_mut().zip(schema.fields()) {
+-        let bytes = rows.and_then(|rows| {
+-            if rows == 0 {
+-                return Some(0);
+-            }
+-            let values = match field.data_type() {
+-                DataType::Boolean => rows.div_ceil(8),
+-                DataType::FixedSizeBinary(width) => {
+-                    rows.checked_mul(usize::try_from(*width).ok()?)?
+-                }
+-                data_type => rows.checked_mul(data_type.primitive_width()?)?,
+-            };
+-            values.checked_add(if field.is_nullable() {
+-                rows.div_ceil(8)
+-            } else {
+-                0
+-            })
+-        });
+-        column.byte_size = bytes.map_or(Precision::Absent, Precision::Inexact);
+-        total = total
+-            .zip(bytes)
+-            .and_then(|(total, bytes)| total.checked_add(bytes));
+-    }
+-    statistics.total_byte_size = total.map_or(Precision::Absent, Precision::Inexact);
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use super::*;
+-    use datafusion::arrow::datatypes::Field;
+-    use datafusion::common::stats::Precision::{Absent, Exact, Inexact};
+-
+-    fn byte_sizes(statistics: &Statistics) -> (Precision<usize>, Vec<Precision<usize>>) {
+-        (
+-            statistics.total_byte_size,
+-            statistics
+-                .column_statistics
+-                .iter()
+-                .map(|column| column.byte_size)
+-                .collect(),
+-        )
+-    }
+-
+-    #[test]
+-    fn projections_estimate_values_and_nullable_bitmaps() {
+-        let schema = Schema::new(vec![
+-            Field::new("id", DataType::Int64, false),
+-            Field::new("value", DataType::Int32, true),
+-            Field::new("flag", DataType::Boolean, false),
+-            Field::new("optional_flag", DataType::Boolean, true),
+-            Field::new("uuid", DataType::FixedSizeBinary(16), false),
+-        ]);
+-        let mut statistics = Statistics::new_unknown(&schema).with_num_rows(Exact(9));
+-        output_bytes(&mut statistics, &schema);
+-        assert_eq!(
+-            byte_sizes(&statistics),
+-            (
+-                Inexact(260),
+-                vec![Inexact(72), Inexact(38), Inexact(2), Inexact(4), Inexact(144)]
+-            )
+-        );
+-        let projection = schema.project(&[3, 1]).unwrap();
+-        let mut projected = Statistics::new_unknown(&projection).with_num_rows(Exact(9));
+-        output_bytes(&mut projected, &projection);
+-        assert_eq!(
+-            (projected.num_rows, byte_sizes(&projected)),
+-            (Exact(9), (Inexact(42), vec![Inexact(4), Inexact(38)]))
+-        );
+-    }
+-
+-    #[test]
+-    fn unknown_columns_and_row_counts_keep_byte_estimates_unknown() {
+-        let schema = Schema::new(vec![
+-            Field::new("id", DataType::Int64, false),
+-            Field::new("label", DataType::Utf8, true),
+-            Field::new("nested", DataType::Struct(Default::default()), true),
+-        ]);
+-        let mut statistics = Statistics::new_unknown(&schema)
+-            .with_num_rows(Inexact(4))
+-            .with_total_byte_size(Exact(12345));
+-        output_bytes(&mut statistics, &schema);
+-        assert_eq!(
+-            (statistics.num_rows, byte_sizes(&statistics)),
+-            (Inexact(4), (Absent, vec![Inexact(32), Absent, Absent]))
+-        );
+-        statistics.num_rows = Absent;
+-        output_bytes(&mut statistics, &schema);
+-        assert_eq!(byte_sizes(&statistics), (Absent, vec![Absent; 3]));
+-        statistics.num_rows = Exact(0);
+-        output_bytes(&mut statistics, &schema);
+-        assert_eq!(byte_sizes(&statistics), (Inexact(0), vec![Inexact(0); 3]));
+-    }
+-
+-    #[test]
+-    fn overflowing_columns_and_totals_stay_unknown() {
+-        for (fields, expected) in [
+-            (
+-                vec![Field::new("wide", DataType::Int64, false)],
+-                vec![Absent],
+-            ),
+-            (
+-                vec![
+-                    Field::new("left", DataType::Int8, false),
+-                    Field::new("right", DataType::Int8, false),
+-                ],
+-                vec![Inexact(usize::MAX), Inexact(usize::MAX)],
+-            ),
+-            (
+-                vec![Field::new("nullable", DataType::Int8, true)],
+-                vec![Absent],
+-            ),
+-        ] {
+-            let schema = Schema::new(fields);
+-            let mut statistics =
+-                Statistics::new_unknown(&schema).with_num_rows(Exact(usize::MAX));
+-            output_bytes(&mut statistics, &schema);
+-            assert_eq!(byte_sizes(&statistics), (Absent, expected));
+-        }
+-    }
+-}
+diff --git a/crates/integrations/datafusion/tests/provider.rs b/crates/integrations/datafusion/tests/provider.rs
+deleted file mode 100644
+index 9bd996f4..00000000
+--- a/crates/integrations/datafusion/tests/provider.rs
++++ /dev/null
+@@ -1,1145 +0,0 @@
+-// Licensed to the Apache Software Foundation (ASF) under one
+-// or more contributor license agreements.  See the NOTICE file
+-// distributed with this work for additional information
+-// regarding copyright ownership.  The ASF licenses this file
+-// to you under the Apache License, Version 2.0 (the
+-// "License"); you may not use this file except in compliance
+-// with the License.  You may obtain a copy of the License at
+-//
+-//   http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing,
+-// software distributed under the License is distributed on an
+-// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+-// KIND, either express or implied.  See the License for the
+-// specific language governing permissions and limitations
+-// under the License.
+-
+-use std::collections::HashMap;
+-use std::sync::Arc;
+-
+-use datafusion::arrow::array::{
+-    ArrayRef, BooleanArray, Float64Array, Int32Array, Int64Array, LargeBinaryArray, StringArray,
+-    StructArray,
+-};
+-use datafusion::arrow::buffer::NullBuffer;
+-use datafusion::arrow::datatypes::{DataType, Field, Schema};
+-use datafusion::arrow::record_batch::RecordBatch;
+-use datafusion::arrow::util::pretty::pretty_format_batches;
+-use datafusion::catalog::TableProvider;
+-use datafusion::datasource::MemTable;
+-use datafusion::logical_expr::Operator;
+-use datafusion::physical_expr::PhysicalExpr;
+-use datafusion::physical_expr::expressions::{
+-    BinaryExpr, Column, DynamicFilterPhysicalExpr, Literal as PhysicalLiteral,
+-};
+-use datafusion::physical_plan::filter_pushdown::{
+-    ChildFilterPushdownResult, ChildPushdownResult, FilterPushdownPhase, PushedDown,
+-};
+-use datafusion::physical_plan::{ExecutionPlanProperties, collect, collect_partitioned};
+-use datafusion::prelude::{SessionConfig, SessionContext, col, lit};
+-use datafusion::scalar::ScalarValue;
+-use futures::{StreamExt, TryStreamExt};
+-use iceberg::arrow::{arrow_schema_to_schema_auto_assign_ids, schema_to_arrow_schema};
+-use iceberg::io::LocalFsStorageFactory;
+-use iceberg::memory::{MEMORY_CATALOG_WAREHOUSE, MemoryCatalogBuilder};
+-use iceberg::metadata_columns::{
+-    RESERVED_COL_NAME_DELETE_FILE_PATH, RESERVED_COL_NAME_DELETE_FILE_POS,
+-    RESERVED_FIELD_ID_DELETE_FILE_PATH, RESERVED_FIELD_ID_DELETE_FILE_POS,
+-};
+-use iceberg::spec::{
+-    DataContentType, DataFileBuilder, DataFileFormat, FormatVersion, Literal, ManifestListWriter,
+-    ManifestWriterBuilder, NestedField, Operation, PrimitiveType, Snapshot, Struct, Summary, Type,
+-};
+-use iceberg::table::Table;
+-use iceberg::transaction::{AddColumn, ApplyTransactionAction, Transaction};
+-use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
+-use iceberg::{Catalog, CatalogBuilder, MemoryCatalog, NamespaceIdent, Runtime, TableCreation};
+-use iceberg_datafusion::IcebergTableProvider;
+-use parquet::arrow::{ArrowWriter, PARQUET_FIELD_ID_META_KEY};
+-use parquet::file::properties::{EnabledStatistics, WriterProperties};
+-use tempfile::TempDir;
+-
+-const ROWS: i64 = 257;
+-
+-fn with_dynamic_filter(
+-    plan: Arc<dyn datafusion::physical_plan::ExecutionPlan>,
+-    filter: Arc<DynamicFilterPhysicalExpr>,
+-    context: &SessionContext,
+-) -> Arc<dyn datafusion::physical_plan::ExecutionPlan> {
+-    let result = plan
+-        .handle_child_pushdown_result(
+-            FilterPushdownPhase::Post,
+-            ChildPushdownResult {
+-                parent_filters: vec![ChildFilterPushdownResult {
+-                    filter,
+-                    child_results: vec![],
+-                }],
+-                self_filters: vec![],
+-            },
+-            context.state().config_options(),
+-        )
+-        .unwrap();
+-    assert!(matches!(result.filters.as_slice(), [PushedDown::No]));
+-    result.updated_node.unwrap()
+-}
+-
+-struct Fixture {
+-    _root: TempDir,
+-    catalog: MemoryCatalog,
+-    table: Table,
+-    batch: RecordBatch,
+-}
+-
+-impl Fixture {
+-    async fn new(write: bool) -> Self {
+-        Self::new_with_id_type(write, DataType::Int64).await
+-    }
+-
+-    async fn new_with_id_type(write: bool, id_type: DataType) -> Self {
+-        let root = tempfile::tempdir().unwrap();
+-        let catalog = MemoryCatalogBuilder::default()
+-            .with_storage_factory(Arc::new(LocalFsStorageFactory))
+-            .with_runtime(Runtime::current())
+-            .load(
+-                "test",
+-                HashMap::from([(
+-                    MEMORY_CATALOG_WAREHOUSE.to_owned(),
+-                    format!("file://{}", root.path().display()),
+-                )]),
+-            )
+-            .await
+-            .unwrap();
+-        let namespace = NamespaceIdent::new("test".to_owned());
+-        catalog
+-            .create_namespace(&namespace, HashMap::new())
+-            .await
+-            .unwrap();
+-        let schema = arrow_schema_to_schema_auto_assign_ids(&Schema::new(vec![
+-            Field::new("id", id_type.clone(), id_type == DataType::Int32),
+-            Field::new("label", DataType::Utf8, true),
+-            Field::new("flag", DataType::Boolean, true),
+-            Field::new(
+-                "payload",
+-                DataType::Struct(
+-                    vec![
+-                        Field::new("code", DataType::Int64, true),
+-                        Field::new("text", DataType::Utf8, true),
+-                    ]
+-                    .into(),
+-                ),
+-                true,
+-            ),
+-            Field::new("special_float", DataType::Float64, true),
+-            Field::new("blob", DataType::Binary, true),
+-        ]))
+-        .unwrap();
+-        let mut table = catalog
+-            .create_table(
+-                &namespace,
+-                TableCreation::builder()
+-                    .name("rows".to_owned())
+-                    .schema(schema)
+-                    .build(),
+-            )
+-            .await
+-            .unwrap();
+-        let arrow_schema =
+-            Arc::new(schema_to_arrow_schema(table.metadata().current_schema()).unwrap());
+-        let DataType::Struct(payload_fields) = arrow_schema.field(3).data_type() else {
+-            unreachable!()
+-        };
+-        let ids: ArrayRef = match id_type {
+-            DataType::Int32 => Arc::new(Int32Array::from_iter(
+-                (0..ROWS).map(|id| (id % 13 != 0).then_some(id as i32)),
+-            )),
+-            DataType::Int64 => Arc::new(Int64Array::from_iter_values(0..ROWS)),
+-            _ => unreachable!(),
+-        };
+-        let batch = RecordBatch::try_new(arrow_schema.clone(), vec![
+-            ids,
+-            Arc::new(StringArray::from_iter(
+-                (0..ROWS).map(|id| (id % 11 != 0).then(|| format!("row-{id}"))),
+-            )),
+-            Arc::new(BooleanArray::from_iter(
+-                (0..ROWS).map(|id| (id % 7 != 0).then_some(id % 2 == 0)),
+-            )),
+-            Arc::new(StructArray::new(
+-                payload_fields.clone(),
+-                vec![
+-                    Arc::new(Int64Array::from_iter(
+-                        (0..ROWS).map(|id| (id % 5 != 0).then_some(id * 3)),
+-                    )),
+-                    Arc::new(StringArray::from_iter(
+-                        (0..ROWS).map(|id| (id % 5 != 0).then(|| format!("nested-{id}"))),
+-                    )),
+-                ],
+-                Some(NullBuffer::from_iter((0..ROWS).map(|id| id % 5 != 0))),
+-            )),
+-            Arc::new(Float64Array::from(vec![f64::NAN; ROWS as usize])),
+-            Arc::new(LargeBinaryArray::from_iter(
+-                (0..ROWS).map(|id| (id % 11 != 0).then(|| id.to_le_bytes().to_vec())),
+-            )),
+-        ])
+-        .unwrap();
+-        if write {
+-            let output = table
+-                .file_io()
+-                .new_output(format!("{}/rows.parquet", table.metadata().location()))
+-                .unwrap();
+-            let mut writer = ParquetWriterBuilder::new(
+-                WriterProperties::builder()
+-                    .set_max_row_group_row_count(Some(32))
+-                    .build(),
+-                table.metadata().current_schema().clone(),
+-            )
+-            .build(output)
+-            .await
+-            .unwrap();
+-            writer.write(&batch).await.unwrap();
+-            let files: Vec<_> = writer
+-                .close()
+-                .await
+-                .unwrap()
+-                .into_iter()
+-                .map(|mut file| {
+-                    file.content(DataContentType::Data)
+-                        .partition(Struct::empty())
+-                        .partition_spec_id(0)
+-                        .build()
+-                        .unwrap()
+-                })
+-                .collect();
+-            let tx = Transaction::new(&table);
+-            table = tx
+-                .fast_append()
+-                .add_data_files(files)
+-                .apply(tx)
+-                .unwrap()
+-                .commit(&catalog)
+-                .await
+-                .unwrap();
+-        }
+-        Self {
+-            _root: root,
+-            catalog,
+-            table,
+-            batch,
+-        }
+-    }
+-
+-    fn context(&self) -> SessionContext {
+-        SessionContext::new_with_config(
+-            SessionConfig::new()
+-                .with_target_partitions(4)
+-                .with_batch_size(19),
+-        )
+-    }
+-
+-    fn evolve_field(&mut self, index: usize, update: impl FnOnce(&mut NestedField)) {
+-        let current = self.table.metadata().current_schema();
+-        let mut fields = current.as_struct().fields().to_vec();
+-        let mut field = fields[index].as_ref().clone();
+-        update(&mut field);
+-        fields[index] = Arc::new(field);
+-        let schema_id = current.schema_id() + 1;
+-        let schema = iceberg::spec::Schema::builder()
+-            .with_schema_id(schema_id)
+-            .with_fields(fields)
+-            .build()
+-            .unwrap();
+-        let metadata = self
+-            .table
+-            .metadata()
+-            .clone()
+-            .into_builder(self.table.metadata_location().map(str::to_owned))
+-            .add_schema(schema)
+-            .unwrap()
+-            .set_current_schema(schema_id)
+-            .unwrap()
+-            .build()
+-            .unwrap()
+-            .metadata;
+-        self.table = Table::builder()
+-            .metadata(metadata)
+-            .identifier(self.table.identifier().clone())
+-            .file_io(self.table.file_io().clone())
+-            .runtime(Runtime::current())
+-            .build()
+-            .unwrap();
+-    }
+-
+-    async fn add_deletes(&mut self) {
+-        let table = &self.table;
+-        let positions = [0, 32, 128, 256];
+-        let pos_schema =
+-            Arc::new(Schema::new(vec![
+-                Field::new(RESERVED_COL_NAME_DELETE_FILE_PATH, DataType::Utf8, false)
+-                    .with_metadata(HashMap::from([(
+-                        PARQUET_FIELD_ID_META_KEY.to_owned(),
+-                        RESERVED_FIELD_ID_DELETE_FILE_PATH.to_string(),
+-                    )])),
+-                Field::new(RESERVED_COL_NAME_DELETE_FILE_POS, DataType::Int64, false)
+-                    .with_metadata(HashMap::from([(
+-                        PARQUET_FIELD_ID_META_KEY.to_owned(),
+-                        RESERVED_FIELD_ID_DELETE_FILE_POS.to_string(),
+-                    )])),
+-            ]));
+-        let pos_batch = RecordBatch::try_new(pos_schema, vec![
+-            Arc::new(StringArray::from_iter_values(std::iter::repeat_n(
+-                format!("{}/rows.parquet", table.metadata().location()),
+-                positions.len(),
+-            ))),
+-            Arc::new(Int64Array::from_iter_values(positions)),
+-        ])
+-        .unwrap();
+-        let eq_batch =
+-            RecordBatch::try_new(Arc::new(self.batch.schema().project(&[0]).unwrap()), vec![
+-                Arc::new(Int64Array::from(vec![31, 97, 255])),
+-            ])
+-            .unwrap();
+-        let parent = table.metadata().current_snapshot().unwrap();
+-        let sequence = table.metadata().next_sequence_number();
+-        let snapshot_id = parent.snapshot_id() + 1;
+-        let mut delete_manifest = ManifestWriterBuilder::new(
+-            table
+-                .file_io()
+-                .new_output(format!(
+-                    "{}/delete-manifest.avro",
+-                    table.metadata().location()
+-                ))
+-                .unwrap(),
+-            Some(snapshot_id),
+-            table.metadata().current_schema().clone(),
+-            table.metadata().default_partition_spec().as_ref().clone(),
+-        )
+-        .build_v2_deletes();
+-        for (name, batch, content, equality_ids) in [
+-            (
+-                "position",
+-                pos_batch,
+-                DataContentType::PositionDeletes,
+-                None,
+-            ),
+-            (
+-                "equality",
+-                eq_batch,
+-                DataContentType::EqualityDeletes,
+-                Some(vec![
+-                    table
+-                        .metadata()
+-                        .current_schema()
+-                        .field_by_name("id")
+-                        .unwrap()
+-                        .id,
+-                ]),
+-            ),
+-        ] {
+-            let path = self._root.path().join(format!("{name}-delete.parquet"));
+-            let file = std::fs::File::create(&path).unwrap();
+-            let mut writer = ArrowWriter::try_new(file, batch.schema(), None).unwrap();
+-            writer.write(&batch).unwrap();
+-            writer.close().unwrap();
+-            let file = DataFileBuilder::default()
+-                .content(content)
+-                .file_path(path.to_string_lossy().into_owned())
+-                .file_format(DataFileFormat::Parquet)
+-                .file_size_in_bytes(std::fs::metadata(&path).unwrap().len())
+-                .record_count(batch.num_rows() as u64)
+-                .partition_spec_id(0)
+-                .partition(Struct::empty())
+-                .equality_ids(equality_ids)
+-                .build()
+-                .unwrap();
+-            delete_manifest.add_file(file, sequence).unwrap();
+-        }
+-        let mut manifests = table
+-            .manifest_list_reader(parent)
+-            .load()
+-            .await
+-            .unwrap()
+-            .entries()
+-            .to_vec();
+-        manifests.push(delete_manifest.write_manifest_file().await.unwrap());
+-        let manifest_list = format!("{}/delete-manifest-list.avro", table.metadata().location());
+-        let mut writer = ManifestListWriter::v2(
+-            table
+-                .file_io()
+-                .new_output(&manifest_list)
+-                .unwrap()
+-                .writer()
+-                .await
+-                .unwrap(),
+-            snapshot_id,
+-            Some(parent.snapshot_id()),
+-            sequence,
+-        );
+-        writer.add_manifests(manifests.into_iter()).unwrap();
+-        writer.close().await.unwrap();
+-        let snapshot = Snapshot::builder()
+-            .with_snapshot_id(snapshot_id)
+-            .with_parent_snapshot_id(Some(parent.snapshot_id()))
+-            .with_sequence_number(sequence)
+-            .with_timestamp_ms(parent.timestamp_ms() + 1)
+-            .with_manifest_list(manifest_list)
+-            .with_summary(Summary {
+-                operation: Operation::Delete,
+-                additional_properties: HashMap::new(),
+-            })
+-            .with_schema_id(table.metadata().current_schema_id())
+-            .build();
+-        let metadata = table
+-            .metadata()
+-            .clone()
+-            .into_builder(table.metadata_location().map(str::to_owned))
+-            .set_branch_snapshot(snapshot, "main")
+-            .unwrap()
+-            .build()
+-            .unwrap()
+-            .metadata;
+-        self.table = Table::builder()
+-            .metadata(metadata)
+-            .identifier(table.identifier().clone())
+-            .file_io(table.file_io().clone())
+-            .runtime(Runtime::current())
+-            .build()
+-            .unwrap();
+-    }
+-}
+-
+-#[test]
+-fn parallel_single_file_scans_preserve_projection_and_row_counts() {
+-    let query_runtime = tokio::runtime::Builder::new_multi_thread()
+-        .worker_threads(2)
+-        .enable_all()
+-        .build()
+-        .unwrap();
+-    let cpu_runtime = tokio::runtime::Builder::new_multi_thread()
+-        .worker_threads(4)
+-        .build()
+-        .unwrap();
+-    let runtime = Runtime::new_with_split(&query_runtime, &cpu_runtime);
+-    let (_fixture, plan, context) = query_runtime.block_on(async {
+-        let fixture = Fixture::new(true).await;
+-        let provider =
+-            IcebergTableProvider::try_new(fixture.table.clone().with_runtime(runtime)).unwrap();
+-        let context = fixture.context();
+-        let state = context.state();
+-        assert_eq!(provider.schema().field(1).data_type(), &DataType::Utf8);
+-        assert_eq!(
+-            provider.schema().field(5).data_type(),
+-            &DataType::LargeBinary
+-        );
+-        let DataType::Struct(payload) = provider.schema().field(3).data_type().clone() else {
+-            unreachable!()
+-        };
+-        assert_eq!(payload[1].data_type(), &DataType::Utf8);
+-        let projection = vec![3, 1, 0, 5];
+-        let plan = provider
+-            .scan(&state, Some(&projection), &[], None)
+-            .await
+-            .unwrap();
+-        assert_eq!(plan.output_partitioning().partition_count(), 4);
+-        let partitions = collect_partitioned(plan, context.task_ctx()).await.unwrap();
+-        assert!(
+-            partitions
+-                .iter()
+-                .filter(|batches| !batches.is_empty())
+-                .count()
+-                > 1
+-        );
+-        let mut ids = Vec::new();
+-        for batch in partitions.into_iter().flatten() {
+-            assert_eq!(batch.schema().field(0).name(), "payload");
+-            assert_eq!(batch.schema().field(1).name(), "label");
+-            assert_eq!(batch.column(1).data_type(), &DataType::Utf8);
+-            assert_eq!(batch.column(3).data_type(), &DataType::LargeBinary);
+-            let column = batch
+-                .column(2)
+-                .as_any()
+-                .downcast_ref::<Int64Array>()
+-                .unwrap();
+-            let blobs = batch
+-                .column(3)
+-                .as_any()
+-                .downcast_ref::<LargeBinaryArray>()
+-                .unwrap();
+-            assert_eq!(
+-                blobs
+-                    .iter()
+-                    .map(|value| value.map(<[u8]>::to_vec))
+-                    .collect::<Vec<_>>(),
+-                column
+-                    .values()
+-                    .iter()
+-                    .map(|id| (id % 11 != 0).then(|| id.to_le_bytes().to_vec()))
+-                    .collect::<Vec<_>>()
+-            );
+-            ids.extend(column.values().iter().copied());
+-        }
+-        ids.sort_unstable();
+-        assert_eq!(ids, (0..ROWS).collect::<Vec<_>>());
+-
+-        let empty = vec![];
+-        let plan = provider
+-            .scan(&state, Some(&empty), &[], None)
+-            .await
+-            .unwrap();
+-        let batches = collect(plan, context.task_ctx()).await.unwrap();
+-        assert_eq!(
+-            (
+-                batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+-                batches.iter().all(|b| b.num_columns() == 0)
+-            ),
+-            (ROWS as usize, true)
+-        );
+-        let plan = provider.scan(&state, None, &[], None).await.unwrap();
+-        (fixture, plan, context.task_ctx())
+-    });
+-    cpu_runtime.shutdown_background();
+-    let result = query_runtime.block_on(collect(plan, context));
+-    if std::thread::available_parallelism().map_or(1, usize::from) <= 2 {
+-        let batches = result.unwrap();
+-        assert_eq!(
+-            batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+-            ROWS as usize
+-        );
+-        return;
+-    }
+-    let error = result.unwrap_err();
+-    let mut cause: &(dyn std::error::Error + 'static) = &error;
+-    loop {
+-        if let Some(join) = cause.downcast_ref::<tokio::task::JoinError>() {
+-            assert!(join.is_cancelled());
+-            break;
+-        }
+-        cause = cause
+-            .source()
+-            .expect("CPU executor cancellation must reach the consumer");
+-    }
+-}
+-
+-#[test]
+-fn query_workers_decode_without_cpu_executor() {
+-    let query_runtime = tokio::runtime::Builder::new_multi_thread()
+-        .worker_threads(4)
+-        .enable_all()
+-        .build()
+-        .unwrap();
+-    let cpu_runtime = tokio::runtime::Builder::new_multi_thread()
+-        .worker_threads(1)
+-        .build()
+-        .unwrap();
+-    let runtime = Runtime::new_with_split(&query_runtime, &cpu_runtime);
+-    let (_fixture, plan, context) = query_runtime.block_on(async {
+-        let fixture = Fixture::new(true).await;
+-        let provider =
+-            IcebergTableProvider::try_new(fixture.table.clone().with_runtime(runtime)).unwrap();
+-        let context = fixture.context();
+-        let plan = provider
+-            .scan(&context.state(), None, &[], None)
+-            .await
+-            .unwrap();
+-        assert_eq!(plan.output_partitioning().partition_count(), 4);
+-        (fixture, plan, context.task_ctx())
+-    });
+-    cpu_runtime.shutdown_background();
+-    let outside_runtime = plan.execute(0, context.clone()).unwrap();
+-    assert!(
+-        query_runtime
+-            .block_on(outside_runtime.try_collect::<Vec<_>>())
+-            .is_err()
+-    );
+-    let batches = query_runtime.block_on(collect(plan, context)).unwrap();
+-    let mut ids: Vec<_> = batches
+-        .iter()
+-        .flat_map(|batch| {
+-            batch
+-                .column(0)
+-                .as_any()
+-                .downcast_ref::<Int64Array>()
+-                .unwrap()
+-                .values()
+-                .iter()
+-                .copied()
+-        })
+-        .collect();
+-    ids.sort_unstable();
+-    assert_eq!(ids, (0..ROWS).collect::<Vec<_>>());
+-}
+-
+-#[tokio::test]
+-async fn multiple_files_distribute_rows_across_independent_consumers() {
+-    const ROWS_PER_FILE: i64 = ROWS * 4;
+-    const ROW_GROUP_ROWS: usize = 128;
+-    let fixture = Fixture::new(false).await;
+-    let mut files = Vec::new();
+-    let padding = "x".repeat(2048);
+-    let base = datafusion::arrow::compute::concat_batches(
+-        &fixture.batch.schema(),
+-        std::iter::repeat_n(&fixture.batch, 4),
+-    )
+-    .unwrap();
+-    for file in 0..8 {
+-        let first = file * ROWS_PER_FILE;
+-        let mut columns = base.columns().to_vec();
+-        columns[0] = Arc::new(Int64Array::from_iter_values(first..first + ROWS_PER_FILE));
+-        columns[1] = Arc::new(StringArray::from_iter_values(
+-            (first..first + ROWS_PER_FILE).map(|id| format!("{id:08}{padding}")),
+-        ));
+-        let batch = RecordBatch::try_new(fixture.batch.schema(), columns).unwrap();
+-        let output = fixture
+-            .table
+-            .file_io()
+-            .new_output(format!(
+-                "{}/rows-{file}.parquet",
+-                fixture.table.metadata().location()
+-            ))
+-            .unwrap();
+-        let mut writer = ParquetWriterBuilder::new(
+-            WriterProperties::builder()
+-                .set_compression(parquet::basic::Compression::UNCOMPRESSED)
+-                .set_statistics_enabled(EnabledStatistics::None)
+-                .set_max_row_group_row_count(Some(ROW_GROUP_ROWS))
+-                .build(),
+-            fixture.table.metadata().current_schema().clone(),
+-        )
+-        .build(output)
+-        .await
+-        .unwrap();
+-        writer.write(&batch).await.unwrap();
+-        files.extend(writer.close().await.unwrap().into_iter().map(|mut file| {
+-            file.content(DataContentType::Data)
+-                .partition(Struct::empty())
+-                .partition_spec_id(0)
+-                .build()
+-                .unwrap()
+-        }));
+-    }
+-    let tx = Transaction::new(&fixture.table);
+-    let table = tx
+-        .fast_append()
+-        .add_data_files(files)
+-        .apply(tx)
+-        .unwrap()
+-        .commit(&fixture.catalog)
+-        .await
+-        .unwrap();
+-    let provider = IcebergTableProvider::try_new(table).unwrap();
+-    let context = SessionContext::new_with_config(
+-        SessionConfig::new()
+-            .with_target_partitions(14)
+-            .with_batch_size(19),
+-    );
+-    let projection = vec![0];
+-    let plan = provider
+-        .scan(&context.state(), Some(&projection), &[], None)
+-        .await
+-        .unwrap();
+-    let partitions = collect_partitioned(plan, context.task_ctx()).await.unwrap();
+-    assert_eq!(partitions.len(), 14);
+-    let loads = partitions
+-        .iter()
+-        .map(|batches| batches.iter().map(RecordBatch::num_rows).sum::<usize>())
+-        .collect::<Vec<_>>();
+-    assert!(loads.iter().all(|rows| *rows > 0));
+-    assert!(
+-        *loads.iter().max().unwrap()
+-            <= (ROWS_PER_FILE as usize * 8).div_ceil(loads.len()) + ROW_GROUP_ROWS,
+-        "consumer rows: {loads:?}"
+-    );
+-    let mut ids = partitions
+-        .into_iter()
+-        .flatten()
+-        .flat_map(|batch| {
+-            batch
+-                .column(0)
+-                .as_any()
+-                .downcast_ref::<Int64Array>()
+-                .unwrap()
+-                .values()
+-                .to_vec()
+-        })
+-        .collect::<Vec<_>>();
+-    ids.sort_unstable();
+-    assert_eq!(ids, (0..ROWS_PER_FILE * 8).collect::<Vec<_>>());
+-}
+-
+-#[tokio::test]
+-async fn pushed_and_residual_filters_match_datafusion() {
+-    let fixture = Fixture::new(true).await;
+-    let context = fixture.context();
+-    context
+-        .register_table(
+-            "ice",
+-            Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap()),
+-        )
+-        .unwrap();
+-    context
+-        .register_table(
+-            "reference",
+-            Arc::new(
+-                MemTable::try_new(fixture.batch.schema(), vec![vec![fixture.batch.clone()]])
+-                    .unwrap(),
+-            ),
+-        )
+-        .unwrap();
+-    for filter in [
+-        "id BETWEEN 17 AND 142",
+-        "id IN (1, 8, 130, NULL)",
+-        "flag IS NULL OR label LIKE '%1%'",
+-        "NOT (id > 12 AND label LIKE '%1%')",
+-        "flag != false",
+-        "label LIKE 'row-1%' AND id > 115",
+-        "CAST(id AS VARCHAR) = '128'",
+-        "payload.code BETWEEN 12 AND 30",
+-        "payload IS NOT NULL",
+-        "payload IS NULL OR id > 200",
+-        "special_float > 1.0",
+-        "special_float < 1.0",
+-        "NOT (special_float < 1.0)",
+-    ] {
+-        let mut results = Vec::new();
+-        for name in ["ice", "reference"] {
+-            let batches = context
+-                .sql(&format!(
+-                    "SELECT label, id FROM {name} WHERE {filter} ORDER BY id"
+-                ))
+-                .await
+-                .unwrap()
+-                .collect()
+-                .await
+-                .unwrap();
+-            results.push(pretty_format_batches(&batches).unwrap().to_string());
+-        }
+-        assert_eq!(results[0], results[1], "filter: {filter}");
+-    }
+-    let keys = RecordBatch::try_new(
+-        Arc::new(Schema::new(vec![Field::new(
+-            "join_key",
+-            DataType::Int64,
+-            false,
+-        )])),
+-        vec![Arc::new(Int64Array::from(vec![5, 19, 205]))],
+-    )
+-    .unwrap();
+-    context
+-        .register_table(
+-            "keys",
+-            Arc::new(MemTable::try_new(keys.schema(), vec![vec![keys]]).unwrap()),
+-        )
+-        .unwrap();
+-    let plan = context
+-        .sql("SELECT data.id FROM keys JOIN ice data ON keys.join_key = data.id ORDER BY data.id")
+-        .await
+-        .unwrap()
+-        .create_physical_plan()
+-        .await
+-        .unwrap();
+-    let mut nodes = vec![plan.clone()];
+-    let mut scan = None;
+-    while let Some(node) = nodes.pop() {
+-        if node.name() == "IcebergScan" {
+-            scan = Some(node.clone());
+-        }
+-        nodes.extend(node.children().into_iter().cloned());
+-    }
+-    let batches = collect(plan, context.task_ctx()).await.unwrap();
+-    let ids = batches
+-        .iter()
+-        .flat_map(|batch| {
+-            batch
+-                .column(0)
+-                .as_any()
+-                .downcast_ref::<Int64Array>()
+-                .unwrap()
+-                .values()
+-                .to_vec()
+-        })
+-        .collect::<Vec<_>>();
+-    assert_eq!(ids, vec![5, 19, 205]);
+-    assert!(
+-        scan.unwrap()
+-            .metrics()
+-            .unwrap()
+-            .iter()
+-            .filter(|metric| metric.value().name() == "dynamic_filter_rows_pruned")
+-            .map(|metric| metric.value().as_usize())
+-            .sum::<usize>()
+-            > 0
+-    );
+-}
+-
+-#[tokio::test]
+-async fn deletes_apply_across_split_ranges_and_unprojected_keys() {
+-    let mut fixture = Fixture::new(true).await;
+-    fixture.add_deletes().await;
+-    let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
+-    let context = fixture.context();
+-    context.register_table("ice", provider.clone()).unwrap();
+-    let removed = [0, 31, 32, 97, 128, 255, 256];
+-    for (filter, expected) in [
+-        (
+-            "true",
+-            (0..ROWS)
+-                .filter(|id| !removed.contains(id))
+-                .collect::<Vec<_>>(),
+-        ),
+-        (
+-            "id >= 64 AND id < 200",
+-            (64..200).filter(|id| !removed.contains(id)).collect(),
+-        ),
+-    ] {
+-        let batches = context
+-            .sql(&format!("SELECT id FROM ice WHERE {filter} ORDER BY id"))
+-            .await
+-            .unwrap()
+-            .collect()
+-            .await
+-            .unwrap();
+-        let actual = batches
+-            .iter()
+-            .flat_map(|batch| {
+-                batch
+-                    .column(0)
+-                    .as_any()
+-                    .downcast_ref::<Int64Array>()
+-                    .unwrap()
+-                    .values()
+-                    .to_vec()
+-            })
+-            .collect::<Vec<_>>();
+-        assert_eq!(actual, expected);
+-    }
+-    let projection = vec![1];
+-    let plan = provider
+-        .scan(&context.state(), Some(&projection), &[], None)
+-        .await
+-        .unwrap();
+-    assert_eq!(plan.output_partitioning().partition_count(), 4);
+-    let batches = collect(plan, context.task_ctx()).await.unwrap();
+-    let mut labels = batches
+-        .iter()
+-        .flat_map(|batch| {
+-            batch
+-                .column(0)
+-                .as_any()
+-                .downcast_ref::<StringArray>()
+-                .unwrap()
+-                .iter()
+-                .map(|value| value.map(str::to_owned))
+-                .collect::<Vec<_>>()
+-        })
+-        .collect::<Vec<_>>();
+-    labels.sort_unstable();
+-    let mut expected = (0..ROWS)
+-        .filter(|id| !removed.contains(id))
+-        .map(|id| (id % 11 != 0).then(|| format!("row-{id}")))
+-        .collect::<Vec<_>>();
+-    expected.sort_unstable();
+-    assert_eq!(labels, expected);
+-}
+-
+-#[tokio::test]
+-async fn added_columns_and_empty_snapshots_keep_their_schema() {
+-    let mut fixture = Fixture::new(true).await;
+-    let tx = Transaction::new(&fixture.table);
+-    let table = tx
+-        .upgrade_table_version()
+-        .set_format_version(FormatVersion::V3)
+-        .apply(tx)
+-        .unwrap()
+-        .commit(&fixture.catalog)
+-        .await
+-        .unwrap();
+-    let tx = Transaction::new(&table);
+-    let table = tx
+-        .update_schema()
+-        .add_column(AddColumn::optional(
+-            "new_column",
+-            Type::Primitive(PrimitiveType::String),
+-        ))
+-        .add_column(AddColumn::required(
+-            "defaulted",
+-            Type::Primitive(PrimitiveType::Int),
+-            Literal::int(7),
+-        ))
+-        .add_column(AddColumn::required(
+-            "default_string",
+-            PrimitiveType::String.into(),
+-            Literal::string("fallback"),
+-        ))
+-        .apply(tx)
+-        .unwrap()
+-        .commit(&fixture.catalog)
+-        .await
+-        .unwrap();
+-    fixture.table = table;
+-    fixture.evolve_field(1, |field| field.name = "renamed_label".to_owned());
+-    let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
+-    let context = fixture.context();
+-    let projection = vec![6];
+-    let plan = provider
+-        .scan(&context.state(), Some(&projection), &[], None)
+-        .await
+-        .unwrap();
+-    let batches = collect(plan, context.task_ctx()).await.unwrap();
+-    assert_eq!(
+-        (
+-            batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+-            batches
+-                .iter()
+-                .map(|b| b.column(0).null_count())
+-                .sum::<usize>()
+-        ),
+-        (ROWS as usize, ROWS as usize)
+-    );
+-    context.register_table("evolved", provider.clone()).unwrap();
+-    for filter in [
+-        "defaulted = 7",
+-        "defaulted > 6",
+-        "default_string = 'fallback'",
+-    ] {
+-        let batches = context
+-            .sql(&format!(
+-                "SELECT id FROM evolved WHERE {filter} ORDER BY id"
+-            ))
+-            .await
+-            .unwrap()
+-            .collect()
+-            .await
+-            .unwrap();
+-        let ids = batches
+-            .iter()
+-            .flat_map(|batch| {
+-                batch
+-                    .column(0)
+-                    .as_any()
+-                    .downcast_ref::<Int64Array>()
+-                    .unwrap()
+-                    .values()
+-                    .to_vec()
+-            })
+-            .collect::<Vec<_>>();
+-        assert_eq!(ids, (0..ROWS).collect::<Vec<_>>(), "filter: {filter}");
+-    }
+-    let batches = context
+-        .sql("SELECT renamed_label, default_string FROM evolved ORDER BY id")
+-        .await
+-        .unwrap()
+-        .collect()
+-        .await
+-        .unwrap();
+-    let labels = batches
+-        .iter()
+-        .flat_map(|batch| {
+-            batch
+-                .column(0)
+-                .as_any()
+-                .downcast_ref::<StringArray>()
+-                .unwrap()
+-                .iter()
+-                .map(|value| value.map(str::to_owned))
+-                .collect::<Vec<_>>()
+-        })
+-        .collect::<Vec<_>>();
+-    let expected = fixture
+-        .batch
+-        .column(1)
+-        .as_any()
+-        .downcast_ref::<StringArray>()
+-        .unwrap()
+-        .iter()
+-        .map(|value| value.map(str::to_owned))
+-        .collect::<Vec<_>>();
+-    assert_eq!(labels, expected);
+-    for batch in batches {
+-        assert!(
+-            batch
+-                .column(1)
+-                .as_any()
+-                .downcast_ref::<StringArray>()
+-                .unwrap()
+-                .iter()
+-                .all(|value| value == Some("fallback"))
+-        );
+-    }
+-    let projection = vec![8, 0];
+-    let plan = provider
+-        .scan(&context.state(), Some(&projection), &[], None)
+-        .await
+-        .unwrap();
+-    let key: Arc<dyn PhysicalExpr> = Arc::new(Column::new("default_string", 0));
+-    let dynamic = Arc::new(DynamicFilterPhysicalExpr::new(
+-        vec![key.clone()],
+-        Arc::new(PhysicalLiteral::new(ScalarValue::Boolean(Some(true)))),
+-    ));
+-    dynamic
+-        .update(Arc::new(BinaryExpr::new(
+-            key,
+-            Operator::Eq,
+-            Arc::new(PhysicalLiteral::new(ScalarValue::Utf8(Some(
+-                "fallback".to_owned(),
+-            )))),
+-        )))
+-        .unwrap();
+-    let plan = with_dynamic_filter(plan, dynamic, &context);
+-    let batches = collect(plan, context.task_ctx()).await.unwrap();
+-    assert_eq!(
+-        batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+-        ROWS as usize
+-    );
+-
+-    let empty = Fixture::new(false).await;
+-    let provider = IcebergTableProvider::try_new(empty.table).unwrap();
+-    let plan = provider
+-        .scan(&context.state(), None, &[], None)
+-        .await
+-        .unwrap();
+-    assert_eq!(plan.schema().as_ref(), empty.batch.schema().as_ref());
+-    assert_eq!(plan.output_partitioning().partition_count(), 4);
+-    assert!(collect(plan, context.task_ctx()).await.unwrap().is_empty());
+-}
+-
+-#[tokio::test]
+-async fn promoted_integer_predicates_preserve_out_of_range_literals() {
+-    let mut fixture = Fixture::new_with_id_type(true, DataType::Int32).await;
+-    fixture.evolve_field(0, |field| *field.field_type = PrimitiveType::Long.into());
+-    let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
+-    let context = fixture.context();
+-    context
+-        .register_table("promoted", provider.clone())
+-        .unwrap();
+-    let unfiltered = context
+-        .sql("SELECT * FROM promoted")
+-        .await
+-        .unwrap()
+-        .collect()
+-        .await
+-        .unwrap();
+-    assert_eq!(
+-        unfiltered.iter().map(RecordBatch::num_rows).sum::<usize>(),
+-        ROWS as usize
+-    );
+-    assert_eq!(
+-        unfiltered
+-            .iter()
+-            .map(|batch| batch.column(0).null_count())
+-            .sum::<usize>(),
+-        20
+-    );
+-    assert_eq!(provider.schema().field(0).data_type(), &DataType::Int64);
+-    context
+-        .register_table(
+-            "reference",
+-            Arc::new(MemTable::try_new(provider.schema(), vec![unfiltered]).unwrap()),
+-        )
+-        .unwrap();
+-    for filter in [
+-        "id < 2147483648",
+-        "id >= -2147483649",
+-        "id != 2147483648",
+-        "id IN (4, 97, 2147483648)",
+-        "id NOT IN (4, 97, 2147483648)",
+-        "id IN (-2147483649, 4, 97)",
+-        "id NOT IN (-2147483649, 4, 97)",
+-        "id IS NULL OR id < 2147483648",
+-    ] {
+-        let mut results = Vec::new();
+-        for name in ["promoted", "reference"] {
+-            let batches = context
+-                .sql(&format!(
+-                    "SELECT id, label FROM {name} WHERE {filter} ORDER BY id NULLS FIRST, label"
+-                ))
+-                .await
+-                .unwrap()
+-                .collect()
+-                .await
+-                .unwrap();
+-            results.push(pretty_format_batches(&batches).unwrap().to_string());
+-        }
+-        assert_eq!(results[0], results[1], "filter: {filter}");
+-    }
+-}
+-
+-#[tokio::test]
+-async fn dynamic_filters_remain_live_after_projection_and_field_rename() {
+-    let mut fixture = Fixture::new(true).await;
+-    fixture.add_deletes().await;
+-    fixture.evolve_field(0, |field| field.name = "key".to_owned());
+-    let provider = IcebergTableProvider::try_new(fixture.table.clone()).unwrap();
+-    let context = SessionContext::new_with_config(
+-        SessionConfig::new()
+-            .with_target_partitions(2)
+-            .with_batch_size(8),
+-    );
+-    let projection = vec![1, 0];
+-    let plan = provider
+-        .scan(
+-            &context.state(),
+-            Some(&projection),
+-            &[col("key").gt(lit(50_i64))],
+-            None,
+-        )
+-        .await
+-        .unwrap();
+-    let baseline = plan
+-        .execute(0, context.task_ctx())
+-        .unwrap()
+-        .try_collect::<Vec<_>>()
+-        .await
+-        .unwrap();
+-    let baseline_rows = baseline.iter().map(RecordBatch::num_rows).sum::<usize>();
+-    assert!(baseline_rows > 32);
+-    let key: Arc<dyn PhysicalExpr> = Arc::new(Column::new("key", 1));
+-    let dynamic = Arc::new(DynamicFilterPhysicalExpr::new(
+-        vec![key.clone()],
+-        Arc::new(PhysicalLiteral::new(ScalarValue::Boolean(Some(true)))),
+-    ));
+-    let plan = with_dynamic_filter(plan, dynamic.clone(), &context);
+-    let mut visited = false;
+-    plan.apply_expressions(&mut |expression| {
+-        visited |= expression.expression_id() == dynamic.expression_id();
+-        Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
+-    })
+-    .unwrap();
+-    assert!(visited);
+-    let mut input = plan.execute(0, context.task_ctx()).unwrap();
+-    let first = input.next().await.unwrap().unwrap();
+-    dynamic
+-        .update(Arc::new(BinaryExpr::new(
+-            key,
+-            Operator::GtEq,
+-            Arc::new(PhysicalLiteral::new(ScalarValue::Int64(Some(200)))),
+-        )))
+-        .unwrap();
+-    let later = input.try_collect::<Vec<_>>().await.unwrap();
+-    assert!(
+-        first.num_rows() + later.iter().map(RecordBatch::num_rows).sum::<usize>() < baseline_rows
+-    );
+-    dynamic.mark_complete();
+-    let batches = collect(plan.clone(), context.task_ctx()).await.unwrap();
+-    let mut keys = batches
+-        .iter()
+-        .flat_map(|batch| {
+-            batch
+-                .column(1)
+-                .as_any()
+-                .downcast_ref::<Int64Array>()
+-                .unwrap()
+-                .values()
+-                .to_vec()
+-        })
+-        .collect::<Vec<_>>();
+-    keys.sort_unstable();
+-    assert_eq!(keys, (200..255).collect::<Vec<_>>());
+-    assert!(
+-        plan.metrics()
+-            .unwrap()
+-            .iter()
+-            .filter(|metric| metric.value().name() == "dynamic_filter_rows_pruned")
+-            .map(|metric| metric.value().as_usize())
+-            .sum::<usize>()
+-            > 0
+-    );
+-}

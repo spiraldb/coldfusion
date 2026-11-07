@@ -1,5 +1,5 @@
 repository https://github.com/spiraldb/iceberg-rust
 base ea48146de861ee71d32ba747ca0d182ea7746ed1
-tip 278b205d05a87695be6f5d2bc5f76b09f4456256
-tree 0dedea5803754cb115b73e272e896605dbffc655
-patches 23
+tip d28e192ceba4105ff4b4480021d94e3df747915b
+tree 03a4656b29c9fb2d847b1977abfbbcb4a7154939
+patches 24

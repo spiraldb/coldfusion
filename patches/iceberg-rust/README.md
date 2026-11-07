@@ -1,13 +1,13 @@
 # Iceberg Rust patch series
 
-These 23 patches reproduce the public `spiraldb/iceberg-rust` development history used by ColdFusion.
+These 24 patches reproduce the public `spiraldb/iceberg-rust` development history used by ColdFusion.
 
 - Repository: https://github.com/spiraldb/iceberg-rust
 - Base: `ea48146de861ee71d32ba747ca0d182ea7746ed1`
-- Tip: `278b205d05a87695be6f5d2bc5f76b09f4456256`
-- Resulting tree: `0dedea5803754cb115b73e272e896605dbffc655`
+- Tip: `d28e192ceba4105ff4b4480021d94e3df747915b`
+- Resulting tree: `03a4656b29c9fb2d847b1977abfbbcb4a7154939`
 
-The series includes every commit in that range, including intermediate changes and their reverts. It contains only public Iceberg repository changes. The standalone ColdFusion provider is maintained in this repository. The first 22 patch files retain their original numbering headers and checksums; #23 restores built-in Vortex support without rewriting the published history.
+The series includes every commit in that range, including intermediate changes and their reverts. It contains only public Iceberg repository changes. The standalone ColdFusion provider is maintained in this repository. The first 23 patch files retain their original numbering headers and checksums. Patch #23 restores built-in Vortex support and #24 removes the duplicate adapter without rewriting the published history.
 
 Apply the numbered patches in lexical order to a clean checkout of the base:
 
@@ -19,7 +19,7 @@ done
 git write-tree
 ```
 
-The resulting tree must be `0dedea5803754cb115b73e272e896605dbffc655`. This verification creates no commits. The exported series was verified in a detached temporary worktree, which was removed afterward.
+The resulting tree must be `03a4656b29c9fb2d847b1977abfbbcb4a7154939`. This verification creates no commits. The exported series was verified in a detached temporary worktree, which was removed afterward.
 
 [manifest.json](manifest.json) records patch order, public commit identities, SHA-256 checksums, and the successful tree comparison. [base-tip.txt](base-tip.txt) provides the pinned identities in plain text.
 
@@ -28,7 +28,10 @@ The resulting tree must be `0dedea5803754cb115b73e272e896605dbffc655`. This veri
 This is a chronological development series, not a list of upstream defects or a
 minimal upstream submission. The native Vortex reader and writer already existed
 at the base revision. The DataFusion provider was new work, initially developed
-inside this fork and subsequently copied into standalone ColdFusion.
+inside this fork and subsequently copied into standalone ColdFusion. Patch #24
+removes only that obsolete adapter and its unused lockfile dependencies from the
+native workspace; native Iceberg reader and writer code is unchanged. ColdFusion
+depends directly on Iceberg and unchanged DataFusion, and is the maintained adapter.
 
 The two native Parquet correctness fixes found during this work concern physical
 row-group split ownership and predicate literals after schema promotion. The I/O
@@ -40,7 +43,7 @@ our provider, tests, documentation, or experiments.
 | --- | --- | --- |
 | 1 | `eed7a41c` | Made Vortex optional after interpreting the initial constraint too broadly. Reverted by #23; it was not needed to optimize Parquet. |
 | 2 | `636504bb` | Correctness: use actual Parquet column offsets for disjoint row-group ownership and expose validated task byte ranges. Required by our parallel split design. |
-| 3 | `5ca9dac1` | Added the DataFusion provider and parallel source partitions. New integration functionality, not an existing reader defect. |
+| 3 | `5ca9dac1` | Added the historical DataFusion provider prototype and parallel source partitions. Removed from the native workspace by #24; the maintained provider is standalone ColdFusion. |
 | 4 | `a21a8d20` | Added conservative static predicate pushdown to the provider. An optimization; DataFusion retains residual filters. |
 | 5 | `77e43577` | Added real-file validation for deletes, schema evolution, and filtering. No new execution policy. |
 | 6 | `b75bcdb0` | Documented the provider API, immutable snapshot, and parallel scan contract. |
@@ -61,6 +64,7 @@ our provider, tests, documentation, or experiments.
 | 21 | `252ab569` | Let sufficiently sized DataFusion runtimes decode directly; use background decoding when query worker capacity is smaller. Supersedes #9's unconditional offload. |
 | 22 | `04c96e42` | Corrected our provider's statistics to estimate projected Arrow output bytes instead of reporting compressed file bytes. This was our integration error. |
 | 23 | `278b205d` | Reverted #1, restoring the native Vortex reader, writer, and delete-file support as mandatory built-in functionality while preserving the Parquet changes. |
+| 24 | `d28e192c` | Removed the duplicate DataFusion adapter crate and its unused lockfile dependencies from the native workspace. Native core code is unchanged; ColdFusion depends directly on Iceberg and DataFusion. |
 
 For upstream review, the native fixes and hooks should be consolidated separately
 from provider code and development experiments. Retaining the full history here

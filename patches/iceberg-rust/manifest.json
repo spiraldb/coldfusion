@@ -2,9 +2,9 @@
   "repository": "https://github.com/spiraldb/iceberg-rust",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "278b205d05a87695be6f5d2bc5f76b09f4456256",
-  "tip_tree": "0dedea5803754cb115b73e272e896605dbffc655",
-  "patch_count": 23,
+  "tip_commit": "d28e192ceba4105ff4b4480021d94e3df747915b",
+  "tip_tree": "03a4656b29c9fb2d847b1977abfbbcb4a7154939",
+  "patch_count": 24,
   "patches": [
     {
       "patch": "0001-Make-Vortex-support-optional-and-disabled-by-default.patch",
@@ -143,12 +143,18 @@
       "commit": "278b205d05a87695be6f5d2bc5f76b09f4456256",
       "subject": "Restore built-in Vortex Iceberg readers and writers",
       "sha256": "adee76f62905413722eabb9a05e4430110f9b85544553da90ef7d483e4774624"
+    },
+    {
+      "patch": "0024-Remove-obsolete-DataFusion-adapter-from-native-worksp.patch",
+      "commit": "d28e192ceba4105ff4b4480021d94e3df747915b",
+      "subject": "Remove obsolete DataFusion adapter from native workspace",
+      "sha256": "290b02489f3a5de70dcbb3ff23c8e295a6b0657fd3c3794c02663c357898b5dc"
     }
   ],
   "verification": {
     "method": "Sequential git apply --index in a detached worktree at base; git write-tree equals the published tip tree. No commits created.",
-    "verified_utc": "2026-11-07T03:25:36.756063+00:00",
-    "applied_tree": "0dedea5803754cb115b73e272e896605dbffc655",
+    "verified_utc": "2026-11-07T04:14:15.703570+00:00",
+    "applied_tree": "03a4656b29c9fb2d847b1977abfbbcb4a7154939",
     "matches_tip_tree": true
   }
 }
