@@ -55,7 +55,7 @@ to observe catalog changes. Reads use Iceberg's field-ID projection, schema
 evolution, defaults, and positional and equality delete handling. Output uses
 canonical Iceberg Arrow types, including `Utf8` and `LargeBinary`.
 
-Conservative primitive predicates prune manifests, row groups, and Parquet pages.
+Static primitive predicates prune manifests, row groups, and Parquet pages.
 Page-statistics pruning follows DataFusion's
 `datafusion.execution.parquet.enable_page_index` setting (enabled by default).
 Files without indexes fall back to row-group and decoded-row filtering.
@@ -66,7 +66,8 @@ cost more than it saves when little is pruned. The provider declines that option
 reader pushdown and retains DataFusion's join and residual checks. This does not
 skip SQL `CASE` evaluation required by the query. Vortex uses the native static
 predicate path and DataFusion residuals; the Parquet-specific live row-filter
-hook does not run on Vortex files.
+hook does not run on Vortex files. Live filters evaluate decoded Arrow batches;
+they do not currently turn arbitrary `CASE` expressions into metadata pruning.
 The scan exposes output rows, compute time, bytes read, and dynamic pruning
 through DataFusion metrics. Byte statistics estimate projected Arrow output,
 independently of file compression.
@@ -76,8 +77,9 @@ independently of file compression.
 The dependency starts from `spiraldb/iceberg-rust` main at
 `ea48146de861ee71d32ba747ca0d182ea7746ed1` and is pinned in `Cargo.toml`.
 The [patch series](patches/iceberg-rust/) reproduces the patched fork tree.
-It includes Parquet split ownership and promoted-literal fixes, runtime and
-cancellation support, and the per-file row-filter extension used by this crate.
+It includes Parquet split ownership, promoted-literal and page-bound fixes,
+runtime and cancellation support, and the per-file row-filter extension used by
+this crate.
 
 ## Validation
 
@@ -105,37 +107,43 @@ the canonical references. Each query reports the median of three timed samples.
 Derived query throughput is `22 / sum(query median seconds)`; this is not the
 official TPC-H power/refresh/concurrent-stream metric.
 
-The fresh five-configuration cohort completed November 7, 2026 UTC, using
-ColdFusion `ed23032d` and Iceberg `278b205d`. The subsequent removal of the
-obsolete native-workspace adapter leaves the native core source and ColdFusion
-consumer dependency graph, including features, unchanged; that proof is recorded
-with the results. The measured identities remain explicit.
-This historical cohort used page-statistics pruning disabled. The current provider
-honors DataFusion's default of enabling it. The [input index audit](benchmarks/parquet-page-pruning-2026-11-07/page-index-audit.json)
+The final seven-configuration cohort completed November 7, 2026 UTC, using
+ColdFusion `19558c4b` and Iceberg `930277e0`. All 154 query checks passed exact
+validation using one executable and identical SQL and input values.
+
+| Configuration | Parquet page pruning | Sum of query medians | Queries/s | Encoded data GB | Files |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Spiral DataFusion SDK · Arbor | N/A | 5.783 s | 3.804 | 2.762 | 88 |
+| DataFusion · Arbor direct Scan API | N/A | 4.025 s | 5.466 | 2.762 | 88 |
+| ColdFusion · original Zstd Parquet | Off | 7.049 s | 3.121 | 2.357 | 16 |
+| ColdFusion · original Zstd Parquet | On | 7.077 s | 3.109 | 2.357 | 16 |
+| ColdFusion · LZ4_RAW Parquet | Off | 5.519 s | 3.986 | 3.540 | 16 |
+| ColdFusion · LZ4_RAW Parquet | On | 5.763 s | 3.818 | 3.540 | 16 |
+| ColdFusion · Vortex-Iceberg | N/A | 5.803 s | 3.791 | 2.761 | 16 |
+
+Direct Arbor was faster than all ColdFusion configurations. LZ4_RAW was near SDK
+Arbor or faster in this single cohort; the samples do not establish a reliable
+throughput lead. Vortex-Iceberg was near SDK Arbor. Canonical Zstd remained slower
+than both Arbor configurations.
+
+Page pruning changed the Zstd sum by only 0.4%. The 4.4% larger LZ4 sum with page
+pruning enabled is almost entirely Q21's variable timings: both settings produced
+samples around 0.45 s and around 0.7 s, and their three-sample medians landed on
+different modes. This cohort does not establish a page-pruning regression.
+The [index audit](benchmarks/parquet-page-pruning-2026-11-07/page-index-audit.json)
 verifies indexes in all 16 canonical Parquet files; their broad bounds exclude no
-lineitem pages for the audited Q6 and Q15 predicates.
-
-| Configuration | Sum of query medians | Queries/s | Encoded data GB | Files |
-| --- | ---: | ---: | ---: | ---: |
-| Spiral DataFusion SDK · Arbor | 5.783 s | 3.804 | 2.762 | 88 |
-| DataFusion · Arbor direct Scan API | 4.012 s | 5.484 | 2.762 | 88 |
-| ColdFusion · original Zstd Parquet | 7.064 s | 3.115 | 2.357 | 16 |
-| ColdFusion · LZ4_RAW Parquet | 5.841 s | 3.767 | 3.540 | 16 |
-| ColdFusion · Vortex-Iceberg | 5.835 s | 3.770 | 2.761 | 16 |
-
-All 110 query checks passed exact validation. Vortex-Iceberg and LZ4_RAW differed
-by less than 0.1%; both were about 1% behind SDK Arbor in this single cohort.
-Those differences do not establish a reliable lead. Direct Arbor was faster:
-Vortex-Iceberg took 45.5% longer in the sum of query medians, corresponding to
-31.2% lower derived query throughput. Canonical Zstd was slower than both Arbor
-configurations.
+lineitem pages for the audited Q6 and Q15 predicates. The real-file regression
+separately verifies that pruning saves reads on selective pages while preserving
+projection and delete semantics.
 
 Storage totals include complete encoded data files and their internal metadata,
 excluding external catalogs, snapshots, and manifests consistently. GB is decimal.
 LZ4_RAW used about 28.2% more data-file bytes than Arbor. Vortex-Iceberg used about
 the same bytes as Arbor, with a different file layout. LZ4 transcoding and
-verification took 33.042 s; Vortex footer/schema verification and hashing took
-1.252 s. These helper costs exclude catalog/manifest setup and query timing.
+verification took 33.681 s with pruning off and 33.184 s with it on; Vortex
+footer/schema verification and hashing took 1.338 s. These helper costs exclude
+catalog/manifest setup and query timing. LZ4 off/on files have identical hashes;
+both Arbor configurations have identical payload fingerprints.
 
 The native Iceberg Vortex reader is crates.io version 0.86.1; Arbor and the
 canonical Vortex generator use `vortex-data/vortex@7d003295`. This compares whole
@@ -143,15 +151,18 @@ configurations with different layouts and reader versions. It does not isolate
 Iceberg overhead or compression alone.
 
 The machine is an Apple M3 Max, 14 CPUs and 96 GiB RAM, with local NVMe storage.
-All five configurations use one executable, identical SQL and input values,
-14 query workers and 14 target partitions. Each query has one validation/warmup
-execution before its three measured samples. The lanes ran sequentially on a
-shared machine with uncontrolled OS page cache, separated by 30-second cooldowns.
-Builds, tests and profiles ran separately from measurements.
+All seven configurations use 14 query workers and 14 target partitions. Each
+query has one validation/warmup execution before its three measured samples.
+The configurations ran sequentially on a shared machine with uncontrolled OS
+page cache, separated by 30-second cooldowns. Builds, tests and profiles ran
+separately from measurements. A one-second process guard detected no competing
+builds or benchmark runners during the completed cohort. Incomplete attempts
+interrupted by other builds were excluded.
 
-The [five-configuration results and raw timing samples](benchmarks/tpch-sf10-vortex-2026-11-07/)
-record measured source identities, execution order, layout costs and file hashes.
-The [earlier four-configuration cohort](benchmarks/tpch-sf10-2026-11-06/) remains
-available separately. The [original benchmark PR](https://github.com/spiraldb/spiraldb/pull/9815)
-is merged; the [Vortex-Iceberg benchmark PR](https://github.com/spiraldb/spiraldb/pull/9822)
-adds an explicitly selectable lane. Analysis scripts are in [scripts](scripts/).
+The [full seven-configuration table and raw timing samples](benchmarks/parquet-page-pruning-2026-11-07/)
+record measured identities, all 22 per-query medians, execution order, layout costs
+and file hashes. Earlier [five-configuration](benchmarks/tpch-sf10-vortex-2026-11-07/)
+and [four-configuration](benchmarks/tpch-sf10-2026-11-06/) cohorts remain available
+separately. The [original benchmark PR](https://github.com/spiraldb/spiraldb/pull/9815)
+is merged; the [Vortex-Iceberg and page-pruning PR](https://github.com/spiraldb/spiraldb/pull/9822)
+adds the new lane and explicit pruning controls. Analysis scripts are in [scripts](scripts/).
