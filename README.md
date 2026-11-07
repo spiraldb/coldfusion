@@ -5,6 +5,12 @@ Parquet and Vortex through the native readers in `spiraldb/iceberg-rust` and
 exposes parallel scan streams. A table may contain either format or a mixture
 of both. DataFusion is unmodified.
 
+The dependency direction is `ColdFusion → Iceberg + DataFusion`. This repository
+owns the provider, partition planning, and DataFusion expression adaptation. The
+Iceberg reader exposes format-neutral scan tasks and native reader hooks; it
+has no DataFusion dependency. An obsolete adapter prototype has been removed
+from the patched Iceberg workspace.
+
 ```toml
 [dependencies]
 coldfusion = { git = "https://github.com/spiraldb/coldfusion", branch = "develop" }
@@ -51,9 +57,13 @@ canonical Iceberg Arrow types, including `Utf8` and `LargeBinary`.
 
 Conservative primitive predicates prune manifests and native file scans.
 DataFusion retains residual conditions. Parquet live dynamic filters use cheap
-bounds, null checks, and short literal lists; expensive expressions remain
-residual. Vortex uses the native static predicate path and DataFusion residuals;
-the Parquet-specific live row-filter hook does not run on Vortex files.
+bounds, null checks, and short literal lists. DataFusion can represent live join
+filters using `CASE` and hash lookups; evaluating these for every scanned row can
+cost more than it saves when little is pruned. The provider declines that optional
+reader pushdown and retains DataFusion's join and residual checks. This does not
+skip SQL `CASE` evaluation required by the query. Vortex uses the native static
+predicate path and DataFusion residuals; the Parquet-specific live row-filter
+hook does not run on Vortex files.
 The scan exposes output rows, compute time, bytes read, and dynamic pruning
 through DataFusion metrics. Byte statistics estimate projected Arrow output,
 independently of file compression.
@@ -80,39 +90,61 @@ I/O and compute runtimes.
 
 ## Benchmarks
 
-The integration adds separate Coldfusion lanes to `spiraldb/spiraldb`, alongside
+The integration adds separate ColdFusion lanes to `spiraldb/spiraldb`, alongside
 its existing Apache DataFusion–Iceberg lane. It compares the Spiral DataFusion
-Arbor configuration with canonical Zstd Parquet and a separately named LZ4_RAW
-Parquet layout. The LZ4 lane performs untimed transcoding, preserves file order,
-values, schema and row-group boundaries, and reports codecs, hashes, storage
-bytes and preparation time. Re-encoding can change page boundaries.
+Arbor configuration with canonical Zstd Parquet, a separately named LZ4_RAW
+Parquet layout, and canonical Vortex files imported unchanged into Iceberg.
+The LZ4 lane performs untimed transcoding, preserving values, schema, file order,
+and row-group boundaries; re-encoding can change page boundaries.
 
-The workload is the read-only 22-query TPC-H suite at SF10. Every answer is checked
-against the canonical references. Each query reports the median of three timed
-samples. Aggregate query throughput is `22 / sum(query median seconds)`; this is
-not the official TPC-H power/refresh/concurrent-stream metric.
+The read-only 22-query TPC-H suite runs at SF10. Every answer is checked against
+the canonical references. Each query reports the median of three timed samples.
+Derived query throughput is `22 / sum(query median seconds)`; this is not the
+official TPC-H power/refresh/concurrent-stream metric.
 
-The final local cohort on November 6, 2026 passed all 22 exact answer checks on
-each lane, using ColdFusion revision `6b84466b` and one shared executable:
+The fresh five-configuration cohort completed November 7, 2026 UTC, using
+ColdFusion `ed23032d` and Iceberg `278b205d`. The subsequent removal of the
+obsolete native-workspace adapter leaves the native core source and ColdFusion
+consumer dependency graph, including features, unchanged; that proof is recorded
+with the results. The measured identities remain explicit.
 
-| Configuration | Sum of query medians | Queries/s |
-| --- | ---: | ---: |
-| Spiral DataFusion SDK · Arbor | 5.714 s | 3.850 |
-| DataFusion · Arbor direct Scan API | 4.001 s | 5.498 |
-| ColdFusion · original Zstd Parquet | 7.039 s | 3.126 |
-| ColdFusion · LZ4_RAW Parquet | 5.690 s | 3.866 |
+| Configuration | Sum of query medians | Queries/s | Encoded data GB | Files |
+| --- | ---: | ---: | ---: | ---: |
+| Spiral DataFusion SDK · Arbor | 5.783 s | 3.804 | 2.762 | 88 |
+| DataFusion · Arbor direct Scan API | 4.012 s | 5.484 | 2.762 | 88 |
+| ColdFusion · original Zstd Parquet | 7.064 s | 3.115 | 2.357 | 16 |
+| ColdFusion · LZ4_RAW Parquet | 5.841 s | 3.767 | 3.540 | 16 |
+| ColdFusion · Vortex-Iceberg | 5.835 s | 3.770 | 2.761 | 16 |
 
-Canonical Zstd remained slower than both Arbor configurations. LZ4_RAW was within
-0.5% of the SDK configuration in this single cohort, which does not establish a
-reliable throughput lead; direct Arbor was faster. LZ4 layout preparation and
-reporting took 32.954 s outside query timing. Files grew from 2.357 GB to 3.540 GB
-(decimal units), about 50.2%. The canonical lane reads the original bytes.
+All 110 query checks passed exact validation. Vortex-Iceberg and LZ4_RAW differed
+by less than 0.1%; both were about 1% behind SDK Arbor in this single cohort.
+Those differences do not establish a reliable lead. Direct Arbor was faster:
+Vortex-Iceberg took 45.5% longer in the sum of query medians, corresponding to
+31.2% lower derived query throughput. Canonical Zstd was slower than both Arbor
+configurations.
+
+Storage totals include complete encoded data files and their internal metadata,
+excluding external catalogs, snapshots, and manifests consistently. GB is decimal.
+LZ4_RAW used about 28.2% more data-file bytes than Arbor. Vortex-Iceberg used about
+the same bytes as Arbor, with a different file layout. LZ4 transcoding and
+verification took 33.042 s; Vortex footer/schema verification and hashing took
+1.252 s. These helper costs exclude catalog/manifest setup and query timing.
+
+The native Iceberg Vortex reader is crates.io version 0.86.1; Arbor and the
+canonical Vortex generator use `vortex-data/vortex@7d003295`. This compares whole
+configurations with different layouts and reader versions. It does not isolate
+Iceberg overhead or compression alone.
 
 The machine is an Apple M3 Max, 14 CPUs and 96 GiB RAM, with local NVMe storage.
-All four lanes use the same executable, SQL, input values, 14 query workers and
-14 target partitions. This is one sequential cohort on a shared machine, with
-the OS page cache uncontrolled. Builds and profiles run separately from measurements.
-The [results and raw timing samples](benchmarks/tpch-sf10-2026-11-06/) record
-source and binary identities, execution order, configuration and layout costs.
-The [benchmark PR](https://github.com/spiraldb/spiraldb/pull/9815) retains the
-existing Apache Iceberg lane. Analysis scripts are in [scripts](scripts/).
+All five configurations use one executable, identical SQL and input values,
+14 query workers and 14 target partitions. Each query has one validation/warmup
+execution before its three measured samples. The lanes ran sequentially on a
+shared machine with uncontrolled OS page cache, separated by 30-second cooldowns.
+Builds, tests and profiles ran separately from measurements.
+
+The [five-configuration results and raw timing samples](benchmarks/tpch-sf10-vortex-2026-11-07/)
+record measured source identities, execution order, layout costs and file hashes.
+The [earlier four-configuration cohort](benchmarks/tpch-sf10-2026-11-06/) remains
+available separately. The [original benchmark PR](https://github.com/spiraldb/spiraldb/pull/9815)
+is merged; the [Vortex-Iceberg benchmark PR](https://github.com/spiraldb/spiraldb/pull/9822)
+adds an explicitly selectable lane. Analysis scripts are in [scripts](scripts/).
