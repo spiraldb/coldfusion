@@ -2,9 +2,9 @@
   "repository": "https://github.com/spiraldb/iceberg-rust",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "04c96e42614ccf36f89fb3f699739eeb45e9838b",
-  "tip_tree": "c429d4810e39683eda4b80f88b6a7b569ace182f",
-  "patch_count": 22,
+  "tip_commit": "278b205d05a87695be6f5d2bc5f76b09f4456256",
+  "tip_tree": "0dedea5803754cb115b73e272e896605dbffc655",
+  "patch_count": 23,
   "patches": [
     {
       "patch": "0001-Make-Vortex-support-optional-and-disabled-by-default.patch",
@@ -137,12 +137,18 @@
       "commit": "04c96e42614ccf36f89fb3f699739eeb45e9838b",
       "subject": "Report projected Arrow output sizes to DataFusion",
       "sha256": "f6d0ecf2eea8fcb6d8968711892fd55de67cfd22b0c36154d4d75bb127c601e5"
+    },
+    {
+      "patch": "0023-Restore-built-in-Vortex-Iceberg-readers-and-writers.patch",
+      "commit": "278b205d05a87695be6f5d2bc5f76b09f4456256",
+      "subject": "Restore built-in Vortex Iceberg readers and writers",
+      "sha256": "adee76f62905413722eabb9a05e4430110f9b85544553da90ef7d483e4774624"
     }
   ],
   "verification": {
     "method": "Sequential git apply --index in a detached worktree at base; git write-tree equals the published tip tree. No commits created.",
-    "verified_utc": "2026-11-06T20:43:34.912746+00:00",
-    "applied_tree": "c429d4810e39683eda4b80f88b6a7b569ace182f",
+    "verified_utc": "2026-11-07T03:25:36.756063+00:00",
+    "applied_tree": "0dedea5803754cb115b73e272e896605dbffc655",
     "matches_tip_tree": true
   }
 }
