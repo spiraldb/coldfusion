@@ -52,7 +52,10 @@
     "rustflags": "-C target-cpu=native",
     "build_profile": "bench",
     "same_binary_for_all_lanes": true,
-    "reverse_confirmation_run": false
+    "reverse_confirmation_run": false,
+    "coldfusion_parquet_page_statistics_pruning": false,
+    "coldfusion_parquet_page_indexes_loaded": true,
+    "coldfusion_parquet_bloom_filter_pruning": false
   },
   "source_identities": {
     "description": "Measured executable and public package identities; later maintenance changes are not silently substituted.",

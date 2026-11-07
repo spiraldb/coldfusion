@@ -55,7 +55,10 @@ to observe catalog changes. Reads use Iceberg's field-ID projection, schema
 evolution, defaults, and positional and equality delete handling. Output uses
 canonical Iceberg Arrow types, including `Utf8` and `LargeBinary`.
 
-Conservative primitive predicates prune manifests and native file scans.
+Conservative primitive predicates prune manifests, row groups, and Parquet pages.
+Page-statistics pruning follows DataFusion's
+`datafusion.execution.parquet.enable_page_index` setting (enabled by default).
+Files without indexes fall back to row-group and decoded-row filtering.
 DataFusion retains residual conditions. Parquet live dynamic filters use cheap
 bounds, null checks, and short literal lists. DataFusion can represent live join
 filters using `CASE` and hash lookups; evaluating these for every scanned row can
@@ -107,6 +110,10 @@ ColdFusion `ed23032d` and Iceberg `278b205d`. The subsequent removal of the
 obsolete native-workspace adapter leaves the native core source and ColdFusion
 consumer dependency graph, including features, unchanged; that proof is recorded
 with the results. The measured identities remain explicit.
+This historical cohort used page-statistics pruning disabled. The current provider
+honors DataFusion's default of enabling it. The [input index audit](benchmarks/parquet-page-pruning-2026-11-07/page-index-audit.json)
+verifies indexes in all 16 canonical Parquet files; their broad bounds exclude no
+lineitem pages for the audited Q6 and Q15 predicates.
 
 | Configuration | Sum of query medians | Queries/s | Encoded data GB | Files |
 | --- | ---: | ---: | ---: | ---: |
