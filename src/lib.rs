@@ -102,6 +102,7 @@ impl TableProvider for IcebergTableProvider {
             state.config().target_partitions(),
             state.config().batch_size(),
             !filters.is_empty(),
+            state.config_options().execution.parquet.enable_page_index,
         )?))
     }
 

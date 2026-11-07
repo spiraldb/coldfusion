@@ -53,6 +53,7 @@ pub(crate) struct IcebergScan {
     partitions: Vec<Vec<FileScanTask>>,
     properties: Arc<PlanProperties>,
     batch_size: usize,
+    enable_page_index: bool,
     metrics: ExecutionPlanMetricsSet,
     statistics: Arc<Statistics>,
     dynamic_filters: Vec<Arc<dyn PhysicalExpr>>,
@@ -74,6 +75,7 @@ impl IcebergScan {
         partitions: usize,
         batch_size: usize,
         filtered: bool,
+        enable_page_index: bool,
     ) -> Result<Self> {
         let partitions = partitions.max(2);
         let total_bytes = tasks
@@ -142,6 +144,7 @@ impl IcebergScan {
                 Boundedness::Bounded,
             )),
             batch_size,
+            enable_page_index,
             metrics: ExecutionPlanMetricsSet::new(),
             statistics: Arc::new(statistics),
             dynamic_filters: Vec::new(),
@@ -153,10 +156,11 @@ impl DisplayAs for IcebergScan {
     fn fmt_as(&self, _: DisplayFormatType, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "IcebergScan: partitions={}, tasks={}, dynamic_filters={}",
+            "IcebergScan: partitions={}, tasks={}, dynamic_filters={}, page_index={}",
             self.partitions.len(),
             self.partitions.iter().map(Vec::len).sum::<usize>(),
             self.dynamic_filters.len(),
+            self.enable_page_index,
         )
     }
 }
@@ -235,6 +239,7 @@ impl ExecutionPlan for IcebergScan {
             .reader_builder()
             .with_batch_size(self.batch_size)
             .with_data_file_concurrency_limit(1)
+            .with_row_selection_enabled(self.enable_page_index)
             .with_background_reads(should_read_in_background(self.partitions.len()))
             .with_compute_time_observer(move |elapsed| compute.add_duration(elapsed));
         if !self.dynamic_filters.is_empty() {

@@ -38,7 +38,9 @@ use datafusion::physical_expr::expressions::{
 use datafusion::physical_plan::filter_pushdown::{
     ChildFilterPushdownResult, ChildPushdownResult, FilterPushdownPhase, PushedDown,
 };
-use datafusion::physical_plan::{ExecutionPlanProperties, collect, collect_partitioned};
+use datafusion::physical_plan::{
+    ExecutionPlanProperties, collect, collect_partitioned, displayable,
+};
 use datafusion::prelude::{SessionConfig, SessionContext, col, lit};
 use datafusion::scalar::ScalarValue;
 use futures::{StreamExt, TryStreamExt};
@@ -60,7 +62,9 @@ use iceberg::writer::file_writer::{
     FileWriter, FileWriterBuilder, ParquetWriterBuilder, VortexWriterBuilder,
 };
 use iceberg::{Catalog, CatalogBuilder, MemoryCatalog, NamespaceIdent, Runtime, TableCreation};
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::{ArrowWriter, PARQUET_FIELD_ID_META_KEY};
+use parquet::basic::Compression;
 use parquet::file::properties::{EnabledStatistics, WriterProperties};
 use tempfile::TempDir;
 use vortex::VortexSessionDefault;
@@ -617,6 +621,180 @@ fn query_workers_decode_without_cpu_executor() {
 }
 
 #[tokio::test]
+async fn page_index_pruning_reduces_reads_with_unprojected_filters_and_deletes() {
+    const ROW_GROUP_ROWS: usize = 8192;
+    const TOTAL_ROWS: usize = ROW_GROUP_ROWS * 2;
+    for write_indexes in [true, false] {
+        let mut fixture = Fixture::new(false).await;
+        let base = datafusion::arrow::compute::concat_batches(
+            &fixture.batch.schema(),
+            std::iter::repeat_n(&fixture.batch, TOTAL_ROWS.div_ceil(ROWS as usize)),
+        )
+        .unwrap()
+        .slice(0, TOTAL_ROWS);
+        let label = |row| format!("row-{row:05}-{}", "x".repeat(256));
+        let mut columns = base.columns().to_vec();
+        columns[0] = Arc::new(Int64Array::from_iter_values(
+            (0..TOTAL_ROWS).map(|row| (row % ROW_GROUP_ROWS) as i64),
+        ));
+        columns[1] = Arc::new(StringArray::from_iter_values((0..TOTAL_ROWS).map(label)));
+        let batch = RecordBatch::try_new(fixture.batch.schema(), columns).unwrap();
+        let properties = WriterProperties::builder()
+            .set_compression(Compression::UNCOMPRESSED)
+            .set_dictionary_enabled(false)
+            .set_max_row_group_row_count(Some(ROW_GROUP_ROWS))
+            .set_data_page_row_count_limit(128)
+            .set_data_page_size_limit(4096)
+            .set_write_batch_size(128)
+            .set_statistics_enabled(if write_indexes {
+                EnabledStatistics::Page
+            } else {
+                EnabledStatistics::Chunk
+            })
+            .set_offset_index_disabled(!write_indexes)
+            .build();
+        let mut writer = ParquetWriterBuilder::new(
+            properties,
+            fixture.table.metadata().current_schema().clone(),
+        )
+        .build(
+            fixture
+                .table
+                .file_io()
+                .new_output(&fixture.data_path)
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        writer.write(&batch).await.unwrap();
+        let files = writer
+            .close()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|mut file| {
+                file.content(DataContentType::Data)
+                    .partition(Struct::empty())
+                    .partition_spec_id(0)
+                    .build()
+                    .unwrap()
+            })
+            .collect();
+        fixture.append_files(files).await;
+        let reader = ParquetRecordBatchReaderBuilder::try_new(
+            std::fs::File::open(
+                fixture
+                    .data_path
+                    .strip_prefix("file://")
+                    .unwrap_or(&fixture.data_path),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(reader.metadata().num_row_groups(), 2);
+        for column in reader
+            .metadata()
+            .row_groups()
+            .iter()
+            .flat_map(|group| group.columns().iter().take(2))
+        {
+            assert_eq!(column.column_index_offset().is_some(), write_indexes);
+            assert_eq!(column.offset_index_offset().is_some(), write_indexes);
+        }
+        assert!(
+            std::fs::metadata(
+                fixture
+                    .data_path
+                    .strip_prefix("file://")
+                    .unwrap_or(&fixture.data_path)
+            )
+            .unwrap()
+            .len()
+                > 2 * 1024 * 1024
+        );
+        fixture.add_deletes().await;
+        let provider = IcebergTableProvider::try_new(fixture.table.clone()).unwrap();
+        let expected = (0..TOTAL_ROWS)
+            .filter(|row| {
+                let id = row % ROW_GROUP_ROWS;
+                (28..37).contains(&id) && id != 31 && *row != 32
+            })
+            .map(label)
+            .collect::<Vec<_>>();
+        let mut results = Vec::new();
+        for enable_page_index in [false, true] {
+            let context = SessionContext::new_with_config(
+                SessionConfig::new()
+                    .with_target_partitions(4)
+                    .with_batch_size(19)
+                    .with_parquet_page_index_pruning(enable_page_index),
+            );
+            let plan = provider
+                .scan(
+                    &context.state(),
+                    Some(&vec![1]),
+                    &[col("id").gt_eq(lit(28_i64)).and(col("id").lt(lit(37_i64)))],
+                    None,
+                )
+                .await
+                .unwrap();
+            assert!(
+                format!("{}", displayable(plan.as_ref()).one_line())
+                    .contains(&format!("page_index={enable_page_index}"))
+            );
+            assert_eq!(plan.output_partitioning().partition_count(), 4);
+            let partitions = collect_partitioned(plan.clone(), context.task_ctx())
+                .await
+                .unwrap();
+            assert!(
+                partitions
+                    .iter()
+                    .filter(|batches| !batches.is_empty())
+                    .count()
+                    > 1
+            );
+            let mut labels = partitions
+                .into_iter()
+                .flatten()
+                .flat_map(|batch| {
+                    batch
+                        .column(0)
+                        .as_any()
+                        .downcast_ref::<StringArray>()
+                        .unwrap()
+                        .iter()
+                        .map(|value| value.unwrap().to_owned())
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            labels.sort_unstable();
+            assert_eq!(
+                labels, expected,
+                "indexes={write_indexes}, enabled={enable_page_index}"
+            );
+            let bytes = plan
+                .metrics()
+                .unwrap()
+                .iter()
+                .filter(|metric| metric.value().name() == "bytes_scanned")
+                .map(|metric| metric.value().as_usize())
+                .sum::<usize>();
+            results.push(bytes);
+        }
+        eprintln!(
+            "page-index reads: indexes={write_indexes}, off={}, on={}",
+            results[0], results[1]
+        );
+        if write_indexes {
+            assert!(
+                results[1] < results[0],
+                "page index on/off bytes: {results:?}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn multiple_files_distribute_rows_across_independent_consumers() {
     const ROWS_PER_FILE: i64 = ROWS * 4;
     const ROW_GROUP_ROWS: usize = 128;
@@ -646,7 +824,7 @@ async fn multiple_files_distribute_rows_across_independent_consumers() {
             .unwrap();
         let mut writer = ParquetWriterBuilder::new(
             WriterProperties::builder()
-                .set_compression(parquet::basic::Compression::UNCOMPRESSED)
+                .set_compression(Compression::UNCOMPRESSED)
                 .set_statistics_enabled(EnabledStatistics::None)
                 .set_max_row_group_row_count(Some(ROW_GROUP_ROWS))
                 .build(),

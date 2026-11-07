@@ -41,7 +41,7 @@ include = [
 async-trait = "0.1.89"
 datafusion = { version = "=55.2.0", default-features = false, features = ["parquet"] }
 futures = "0.3"
-iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "d28e192ceba4105ff4b4480021d94e3df747915b", default-features = false }
+iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "930277e0209bec6ff321d06ae9b4a0f2e794000f", default-features = false }
 parquet = "=59.3.2"
 tokio = { version = "1.47", default-features = false, features = ["rt-multi-thread", "sync"] }
 
