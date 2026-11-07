@@ -28,6 +28,7 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::catalog::TableProvider;
+use datafusion::common::DataFusionError;
 use datafusion::datasource::MemTable;
 use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::PhysicalExpr;
@@ -49,16 +50,21 @@ use iceberg::metadata_columns::{
     RESERVED_FIELD_ID_DELETE_FILE_PATH, RESERVED_FIELD_ID_DELETE_FILE_POS,
 };
 use iceberg::spec::{
-    DataContentType, DataFileBuilder, DataFileFormat, FormatVersion, Literal, ManifestListWriter,
-    ManifestWriterBuilder, NestedField, Operation, PrimitiveType, Snapshot, Struct, Summary, Type,
+    DataContentType, DataFile, DataFileBuilder, DataFileFormat, FormatVersion, Literal,
+    ManifestListWriter, ManifestWriterBuilder, NestedField, Operation, PrimitiveType, Snapshot,
+    Struct, Summary, Type,
 };
 use iceberg::table::Table;
 use iceberg::transaction::{AddColumn, ApplyTransactionAction, Transaction};
-use iceberg::writer::file_writer::{FileWriter, FileWriterBuilder, ParquetWriterBuilder};
+use iceberg::writer::file_writer::{
+    FileWriter, FileWriterBuilder, ParquetWriterBuilder, VortexWriterBuilder,
+};
 use iceberg::{Catalog, CatalogBuilder, MemoryCatalog, NamespaceIdent, Runtime, TableCreation};
 use parquet::arrow::{ArrowWriter, PARQUET_FIELD_ID_META_KEY};
 use parquet::file::properties::{EnabledStatistics, WriterProperties};
 use tempfile::TempDir;
+use vortex::VortexSessionDefault;
+use vortex::session::VortexSession;
 
 const ROWS: i64 = 257;
 
@@ -89,6 +95,7 @@ struct Fixture {
     catalog: MemoryCatalog,
     table: Table,
     batch: RecordBatch,
+    data_path: String,
 }
 
 impl Fixture {
@@ -97,6 +104,18 @@ impl Fixture {
     }
 
     async fn new_with_id_type(write: bool, id_type: DataType) -> Self {
+        Self::new_with_id_type_and_format(write, id_type, DataFileFormat::Parquet).await
+    }
+
+    async fn new_with_format(write: bool, format: DataFileFormat) -> Self {
+        Self::new_with_id_type_and_format(write, DataType::Int64, format).await
+    }
+
+    async fn new_with_id_type_and_format(
+        write: bool,
+        id_type: DataType,
+        format: DataFileFormat,
+    ) -> Self {
         let root = tempfile::tempdir().unwrap();
         let catalog = MemoryCatalogBuilder::default()
             .with_storage_factory(Arc::new(LocalFsStorageFactory))
@@ -134,7 +153,7 @@ impl Fixture {
             Field::new("blob", DataType::Binary, true),
         ]))
         .unwrap();
-        let mut table = catalog
+        let table = catalog
             .create_table(
                 &namespace,
                 TableCreation::builder()
@@ -182,25 +201,56 @@ impl Fixture {
             )),
         ])
         .unwrap();
+        let extension = match format {
+            DataFileFormat::Parquet => "parquet",
+            DataFileFormat::Vortex => "vortex",
+            _ => unreachable!(),
+        };
+        let data_path = format!("{}/rows.{extension}", table.metadata().location());
+        let mut fixture = Self {
+            _root: root,
+            catalog,
+            table,
+            batch,
+            data_path,
+        };
         if write {
-            let output = table
-                .file_io()
-                .new_output(format!("{}/rows.parquet", table.metadata().location()))
-                .unwrap();
-            let mut writer = ParquetWriterBuilder::new(
-                WriterProperties::builder()
-                    .set_max_row_group_row_count(Some(32))
-                    .build(),
-                table.metadata().current_schema().clone(),
-            )
-            .build(output)
-            .await
-            .unwrap();
-            writer.write(&batch).await.unwrap();
-            let files: Vec<_> = writer
-                .close()
+            let path = fixture.data_path.clone();
+            let batch = fixture.batch.clone();
+            fixture.write_batch(&path, format, &batch).await;
+        }
+        fixture
+    }
+
+    async fn write_batch(&mut self, path: &str, format: DataFileFormat, batch: &RecordBatch) {
+        let output = self.table.file_io().new_output(path).unwrap();
+        let schema = self.table.metadata().current_schema().clone();
+        let files = match format {
+            DataFileFormat::Parquet => {
+                let mut writer = ParquetWriterBuilder::new(
+                    WriterProperties::builder()
+                        .set_max_row_group_row_count(Some(32))
+                        .build(),
+                    schema,
+                )
+                .build(output)
                 .await
-                .unwrap()
+                .unwrap();
+                writer.write(batch).await.unwrap();
+                writer.close().await.unwrap()
+            }
+            DataFileFormat::Vortex => {
+                let mut writer = VortexWriterBuilder::new(schema, VortexSession::default())
+                    .build(output)
+                    .await
+                    .unwrap();
+                writer.write(batch).await.unwrap();
+                writer.close().await.unwrap()
+            }
+            _ => unreachable!(),
+        };
+        self.append_files(
+            files
                 .into_iter()
                 .map(|mut file| {
                     file.content(DataContentType::Data)
@@ -209,23 +259,21 @@ impl Fixture {
                         .build()
                         .unwrap()
                 })
-                .collect();
-            let tx = Transaction::new(&table);
-            table = tx
-                .fast_append()
-                .add_data_files(files)
-                .apply(tx)
-                .unwrap()
-                .commit(&catalog)
-                .await
-                .unwrap();
-        }
-        Self {
-            _root: root,
-            catalog,
-            table,
-            batch,
-        }
+                .collect(),
+        )
+        .await;
+    }
+
+    async fn append_files(&mut self, files: Vec<DataFile>) {
+        let tx = Transaction::new(&self.table);
+        self.table = tx
+            .fast_append()
+            .add_data_files(files)
+            .apply(tx)
+            .unwrap()
+            .commit(&self.catalog)
+            .await
+            .unwrap();
     }
 
     fn context(&self) -> SessionContext {
@@ -287,7 +335,7 @@ impl Fixture {
             ]));
         let pos_batch = RecordBatch::try_new(pos_schema, vec![
             Arc::new(StringArray::from_iter_values(std::iter::repeat_n(
-                format!("{}/rows.parquet", table.metadata().location()),
+                self.data_path.clone(),
                 positions.len(),
             ))),
             Arc::new(Int64Array::from_iter_values(positions)),
@@ -667,7 +715,13 @@ async fn multiple_files_distribute_rows_across_independent_consumers() {
 
 #[tokio::test]
 async fn pushed_and_residual_filters_match_datafusion() {
-    let fixture = Fixture::new(true).await;
+    for format in [DataFileFormat::Parquet, DataFileFormat::Vortex] {
+        assert_pushed_and_residual_filters_match_datafusion(format).await;
+    }
+}
+
+async fn assert_pushed_and_residual_filters_match_datafusion(format: DataFileFormat) {
+    let fixture = Fixture::new_with_format(true, format).await;
     let context = fixture.context();
     context
         .register_table(
@@ -712,7 +766,10 @@ async fn pushed_and_residual_filters_match_datafusion() {
                 .unwrap();
             results.push(pretty_format_batches(&batches).unwrap().to_string());
         }
-        assert_eq!(results[0], results[1], "filter: {filter}");
+        assert_eq!(
+            results[0], results[1],
+            "format: {format:?}, filter: {filter}"
+        );
     }
     let keys = RecordBatch::try_new(
         Arc::new(Schema::new(vec![Field::new(
@@ -758,21 +815,29 @@ async fn pushed_and_residual_filters_match_datafusion() {
         })
         .collect::<Vec<_>>();
     assert_eq!(ids, vec![5, 19, 205]);
-    assert!(
-        scan.unwrap()
-            .metrics()
-            .unwrap()
-            .iter()
-            .filter(|metric| metric.value().name() == "dynamic_filter_rows_pruned")
-            .map(|metric| metric.value().as_usize())
-            .sum::<usize>()
-            > 0
-    );
+    if format == DataFileFormat::Parquet {
+        assert!(
+            scan.unwrap()
+                .metrics()
+                .unwrap()
+                .iter()
+                .filter(|metric| metric.value().name() == "dynamic_filter_rows_pruned")
+                .map(|metric| metric.value().as_usize())
+                .sum::<usize>()
+                > 0
+        );
+    }
 }
 
 #[tokio::test]
 async fn deletes_apply_across_split_ranges_and_unprojected_keys() {
-    let mut fixture = Fixture::new(true).await;
+    for format in [DataFileFormat::Parquet, DataFileFormat::Vortex] {
+        assert_deletes_apply_across_split_ranges_and_unprojected_keys(format).await;
+    }
+}
+
+async fn assert_deletes_apply_across_split_ranges_and_unprojected_keys(format: DataFileFormat) {
+    let mut fixture = Fixture::new_with_format(true, format).await;
     fixture.add_deletes().await;
     let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
     let context = fixture.context();
@@ -842,7 +907,13 @@ async fn deletes_apply_across_split_ranges_and_unprojected_keys() {
 
 #[tokio::test]
 async fn added_columns_and_empty_snapshots_keep_their_schema() {
-    let mut fixture = Fixture::new(true).await;
+    for format in [DataFileFormat::Parquet, DataFileFormat::Vortex] {
+        assert_added_columns_and_empty_snapshots_keep_their_schema(format).await;
+    }
+}
+
+async fn assert_added_columns_and_empty_snapshots_keep_their_schema(format: DataFileFormat) {
+    let mut fixture = Fixture::new_with_format(true, format).await;
     let tx = Transaction::new(&fixture.table);
     let table = tx
         .upgrade_table_version()
@@ -990,7 +1061,7 @@ async fn added_columns_and_empty_snapshots_keep_their_schema() {
         ROWS as usize
     );
 
-    let empty = Fixture::new(false).await;
+    let empty = Fixture::new_with_format(false, format).await;
     let provider = IcebergTableProvider::try_new(empty.table).unwrap();
     let plan = provider
         .scan(&context.state(), None, &[], None)
@@ -1142,4 +1213,191 @@ async fn dynamic_filters_remain_live_after_projection_and_field_rename() {
             .sum::<usize>()
             > 0
     );
+}
+
+#[tokio::test]
+async fn vortex_single_file_scans_preserve_parallel_rows_and_projections() {
+    let fixture = Fixture::new_with_format(true, DataFileFormat::Vortex).await;
+    let provider = IcebergTableProvider::try_new(fixture.table.clone()).unwrap();
+    let context = fixture.context();
+    let projection = vec![3, 0, 1, 5];
+    let plan = provider
+        .scan(&context.state(), Some(&projection), &[], None)
+        .await
+        .unwrap();
+    let expected_schema = provider.schema().project(&projection).unwrap();
+    assert_eq!(plan.output_partitioning().partition_count(), 4);
+    let partitions = collect_partitioned(plan, context.task_ctx()).await.unwrap();
+    assert!(
+        partitions
+            .iter()
+            .all(|batches| { batches.iter().map(RecordBatch::num_rows).sum::<usize>() > 0 })
+    );
+    let mut ids = Vec::new();
+    for batch in partitions.into_iter().flatten() {
+        assert_eq!(batch.schema().as_ref(), &expected_schema);
+        let keys = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        let labels = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let blobs = batch
+            .column(3)
+            .as_any()
+            .downcast_ref::<LargeBinaryArray>()
+            .unwrap();
+        assert_eq!(
+            labels
+                .iter()
+                .map(|value| value.map(str::to_owned))
+                .collect::<Vec<_>>(),
+            keys.values()
+                .iter()
+                .map(|id| (id % 11 != 0).then(|| format!("row-{id}")))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            blobs
+                .iter()
+                .map(|value| value.map(<[u8]>::to_vec))
+                .collect::<Vec<_>>(),
+            keys.values()
+                .iter()
+                .map(|id| (id % 11 != 0).then(|| id.to_le_bytes().to_vec()))
+                .collect::<Vec<_>>()
+        );
+        ids.extend(keys.values().iter().copied());
+    }
+    ids.sort_unstable();
+    assert_eq!(ids, (0..ROWS).collect::<Vec<_>>());
+
+    let plan = provider
+        .scan(&context.state(), Some(&vec![]), &[], None)
+        .await
+        .unwrap();
+    let batches = collect(plan, context.task_ctx()).await.unwrap();
+    assert_eq!(
+        (
+            batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+            batches.iter().all(|batch| batch.num_columns() == 0),
+        ),
+        (ROWS as usize, true)
+    );
+}
+
+#[tokio::test]
+async fn mixed_data_formats_preserve_rows_filters_and_deletes() {
+    for (first, second) in [
+        (DataFileFormat::Parquet, DataFileFormat::Vortex),
+        (DataFileFormat::Vortex, DataFileFormat::Parquet),
+    ] {
+        let mut fixture = Fixture::new_with_format(true, first).await;
+        let mut columns = fixture.batch.columns().to_vec();
+        columns[0] = Arc::new(Int64Array::from_iter_values(ROWS..ROWS * 2));
+        let extra = RecordBatch::try_new(fixture.batch.schema(), columns).unwrap();
+        let path = format!("{}/extra.{second}", fixture.table.metadata().location());
+        fixture.write_batch(&path, second, &extra).await;
+        fixture.add_deletes().await;
+        let removed = [0, 31, 32, 97, 128, 255, 256];
+        let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
+        let context = fixture.context();
+        let plan = provider
+            .scan(&context.state(), Some(&vec![0]), &[], None)
+            .await
+            .unwrap();
+        assert_eq!(plan.output_partitioning().partition_count(), 4);
+        let partitions = collect_partitioned(plan, context.task_ctx()).await.unwrap();
+        assert!(
+            partitions
+                .iter()
+                .filter(|batches| !batches.is_empty())
+                .count()
+                > 1
+        );
+        let mut actual: Vec<_> = partitions
+            .into_iter()
+            .flatten()
+            .flat_map(|batch| {
+                batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .values()
+                    .to_vec()
+            })
+            .collect();
+        actual.sort_unstable();
+        assert_eq!(
+            actual,
+            (0..ROWS * 2)
+                .filter(|id| !removed.contains(id))
+                .collect::<Vec<_>>()
+        );
+
+        let mask = BooleanArray::from_iter((0..ROWS).map(|id| Some(!removed.contains(&id))));
+        let retained =
+            datafusion::arrow::compute::filter_record_batch(&fixture.batch, &mask).unwrap();
+        context.register_table("ice", provider).unwrap();
+        context
+            .register_table(
+                "reference",
+                Arc::new(
+                    MemTable::try_new(fixture.batch.schema(), vec![vec![retained, extra]]).unwrap(),
+                ),
+            )
+            .unwrap();
+        for filter in [
+            "id BETWEEN 200 AND 300",
+            "flag IS NULL OR label LIKE '%1%'",
+            "payload.code BETWEEN 12 AND 30 OR id >= 500",
+        ] {
+            let mut results = Vec::new();
+            for name in ["ice", "reference"] {
+                let batches = context
+                    .sql(&format!(
+                        "SELECT label, id FROM {name} WHERE {filter} ORDER BY id"
+                    ))
+                    .await
+                    .unwrap()
+                    .collect()
+                    .await
+                    .unwrap();
+                results.push(pretty_format_batches(&batches).unwrap().to_string());
+            }
+            assert_eq!(
+                results[0], results[1],
+                "first format: {first:?}, filter: {filter}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn unsupported_data_formats_are_rejected_before_opening_files() {
+    let mut fixture = Fixture::new(false).await;
+    let path = fixture._root.path().join("unopened.avro");
+    let file = DataFileBuilder::default()
+        .content(DataContentType::Data)
+        .file_path(path.to_string_lossy().into_owned())
+        .file_format(DataFileFormat::Avro)
+        .file_size_in_bytes(1)
+        .record_count(1)
+        .partition_spec_id(0)
+        .partition(Struct::empty())
+        .build()
+        .unwrap();
+    fixture.append_files(vec![file]).await;
+    let provider = IcebergTableProvider::try_new(fixture.table.clone()).unwrap();
+    let error = provider
+        .scan(&fixture.context().state(), None, &[], None)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, DataFusionError::NotImplemented(_)));
+    assert!(!path.exists());
 }
