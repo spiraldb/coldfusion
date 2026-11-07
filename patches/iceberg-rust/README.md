@@ -1,13 +1,13 @@
 # Iceberg Rust patch series
 
-These 24 patches reproduce the public `spiraldb/iceberg-rust` development history used by ColdFusion.
+These 25 patches reproduce the public `spiraldb/iceberg-rust` development history used by ColdFusion.
 
 - Repository: https://github.com/spiraldb/iceberg-rust
 - Base: `ea48146de861ee71d32ba747ca0d182ea7746ed1`
-- Tip: `d28e192ceba4105ff4b4480021d94e3df747915b`
-- Resulting tree: `03a4656b29c9fb2d847b1977abfbbcb4a7154939`
+- Tip: `930277e0209bec6ff321d06ae9b4a0f2e794000f`
+- Resulting tree: `7f9e7822a40c5bf67e711ac0d1cf755d23d17877`
 
-The series includes every commit in that range, including intermediate changes and their reverts. It contains only public Iceberg repository changes. The standalone ColdFusion provider is maintained in this repository. The first 23 patch files retain their original numbering headers and checksums. Patch #23 restores built-in Vortex support and #24 removes the duplicate adapter without rewriting the published history.
+The series includes every commit in that range, including intermediate changes and their reverts. It contains only public Iceberg repository changes. The standalone ColdFusion provider is maintained in this repository. The first 24 patch files retain their original numbering headers and checksums. Patch #23 restores built-in Vortex support and #24 removes the duplicate adapter without rewriting the published history.
 
 Apply the numbered patches in lexical order to a clean checkout of the base:
 
@@ -19,7 +19,7 @@ done
 git write-tree
 ```
 
-The resulting tree must be `03a4656b29c9fb2d847b1977abfbbcb4a7154939`. This verification creates no commits. The exported series was verified in a detached temporary worktree, which was removed afterward.
+The resulting tree must be `7f9e7822a40c5bf67e711ac0d1cf755d23d17877`. This verification creates no commits. The exported series was verified in a detached temporary worktree, which was removed afterward.
 
 [manifest.json](manifest.json) records patch order, public commit identities, SHA-256 checksums, and the successful tree comparison. [base-tip.txt](base-tip.txt) provides the pinned identities in plain text.
 
@@ -33,8 +33,11 @@ removes only that obsolete adapter and its unused lockfile dependencies from the
 native workspace; native Iceberg reader and writer code is unchanged. ColdFusion
 depends directly on Iceberg and unchanged DataFusion, and is the maintained adapter.
 
-The two native Parquet correctness fixes found during this work concern physical
-row-group split ownership and predicate literals after schema promotion. The I/O
+The three native Parquet correctness fixes found during this work concern physical
+row-group split ownership, decoded predicate comparisons after schema promotion,
+and promoted page-index bounds. The last was exposed when page pruning was
+activated: page statistics must promote physical integer and float bounds to the
+current schema type before comparison, independently of decoded row predicates. The I/O
 context fix supports callers with separate compute and I/O runtimes. Other native
 changes add integration hooks or optional behavior. Several commits only affect
 our provider, tests, documentation, or experiments.
@@ -47,7 +50,7 @@ our provider, tests, documentation, or experiments.
 | 4 | `a21a8d20` | Added conservative static predicate pushdown to the provider. An optimization; DataFusion retains residual filters. |
 | 5 | `77e43577` | Added real-file validation for deletes, schema evolution, and filtering. No new execution policy. |
 | 6 | `b75bcdb0` | Documented the provider API, immutable snapshot, and parallel scan contract. |
-| 7 | `efedf229` | Correctness: preserve comparisons when a promoted column's literal cannot fit its physical type. Prevents incorrectly discarded rows. |
+| 7 | `efedf229` | Correctness: preserve decoded row-predicate comparisons when a promoted column's literal cannot fit its physical type. Separate from the page-statistics fix in #25. |
 | 8 | `b88bac0a` | Added optional decoding on the existing CPU executor, bounded buffering, cancellation, and error propagation. Useful with small query runtimes; not required merely to expose multiple output partitions. |
 | 9 | `6acff8d5` | Initially enabled background decoding for every provider partition. Superseded by the automatic choice in #21. |
 | 10 | `1486e2b6` | Added producer compute-time accounting that survives consumer cancellation. Improves measurement accuracy. |
@@ -65,6 +68,7 @@ our provider, tests, documentation, or experiments.
 | 22 | `04c96e42` | Corrected our provider's statistics to estimate projected Arrow output bytes instead of reporting compressed file bytes. This was our integration error. |
 | 23 | `278b205d` | Reverted #1, restoring the native Vortex reader, writer, and delete-file support as mandatory built-in functionality while preserving the Parquet changes. |
 | 24 | `d28e192c` | Removed the duplicate DataFusion adapter crate and its unused lockfile dependencies from the native workspace. Native core code is unchanged; ColdFusion depends directly on Iceberg and DataFusion. |
+| 25 | `930277e0` | Correctness: promote physical Int32/Float page bounds to the current Long/Double types before pruning. Discovered when page-index pruning was activated; distinct from #7's decoded row-predicate fix. Includes real indexed-file promotion regressions. |
 
 For upstream review, the native fixes and hooks should be consolidated separately
 from provider code and development experiments. Retaining the full history here

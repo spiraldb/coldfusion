@@ -2,9 +2,9 @@
   "repository": "https://github.com/spiraldb/iceberg-rust",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "d28e192ceba4105ff4b4480021d94e3df747915b",
-  "tip_tree": "03a4656b29c9fb2d847b1977abfbbcb4a7154939",
-  "patch_count": 24,
+  "tip_commit": "930277e0209bec6ff321d06ae9b4a0f2e794000f",
+  "tip_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
+  "patch_count": 25,
   "patches": [
     {
       "patch": "0001-Make-Vortex-support-optional-and-disabled-by-default.patch",
@@ -149,12 +149,18 @@
       "commit": "d28e192ceba4105ff4b4480021d94e3df747915b",
       "subject": "Remove obsolete DataFusion adapter from native workspace",
       "sha256": "290b02489f3a5de70dcbb3ff23c8e295a6b0657fd3c3794c02663c357898b5dc"
+    },
+    {
+      "patch": "0025-Preserve-promoted-types-in-Parquet-page-statistics.patch",
+      "commit": "930277e0209bec6ff321d06ae9b4a0f2e794000f",
+      "subject": "Preserve promoted types in Parquet page statistics",
+      "sha256": "53c058394f8faf72837fa58787e7eebe8530cac0e5c52702553b53e443dba49d"
     }
   ],
   "verification": {
     "method": "Sequential git apply --index in a detached worktree at base; git write-tree equals the published tip tree. No commits created.",
-    "verified_utc": "2026-11-07T04:14:15.703570+00:00",
-    "applied_tree": "03a4656b29c9fb2d847b1977abfbbcb4a7154939",
+    "verified_utc": "2026-11-07T04:41:07.449886+00:00",
+    "applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
     "matches_tip_tree": true
   }
 }
