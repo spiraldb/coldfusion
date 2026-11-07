@@ -1,9 +1,10 @@
-From b88bac0a2bdfd8e491bb98a275a677893ee88c59 Mon Sep 17 00:00:00 2001
+From 33a62e31cc7fca09ae367747a3597d53b3018e77 Mon Sep 17 00:00:00 2001
 From: Daniel King <dan@spiraldb.com>
-Date: Fri, 6 Nov 2026 12:53:07 -0500
-Subject: [PATCH 08/22] Drive Parquet reads on the configured CPU executor with
- bounded buffering
+Date: Sat, 7 Nov 2026 00:49:57 -0500
+Subject: [PATCH 3/9] Support bounded background decoding on the CPU executor
 
+Retains the native-reader changes from b88bac0a2bdfd8e491bb98a275a677893ee88c59.
+The obsolete integration changes are omitted from this series.
 ---
  crates/iceberg/public-api.txt                 |   3 +
  crates/iceberg/src/arrow/reader/background.rs | 218 ++++++++++++++++++
@@ -15,7 +16,7 @@ Subject: [PATCH 08/22] Drive Parquet reads on the configured CPU executor with
  create mode 100644 crates/iceberg/src/arrow/reader/background.rs
 
 diff --git a/crates/iceberg/public-api.txt b/crates/iceberg/public-api.txt
-index d6bc408aa1883c327433053c7415d77fa6db71e0..05079aa77daf72a1248766f79a2e9daef34ec444 100644
+index d6bc408a..05079aa7 100644
 --- a/crates/iceberg/public-api.txt
 +++ b/crates/iceberg/public-api.txt
 @@ -71,6 +71,7 @@ pub struct iceberg::arrow::ArrowReaderBuilder
@@ -44,7 +45,7 @@ index d6bc408aa1883c327433053c7415d77fa6db71e0..05079aa77daf72a1248766f79a2e9dae
  impl core::fmt::Debug for iceberg::scan::ScanMetrics
 diff --git a/crates/iceberg/src/arrow/reader/background.rs b/crates/iceberg/src/arrow/reader/background.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..e22154be528a73e179af73dc5bd3134a55ce8cca
+index 00000000..e22154be
 --- /dev/null
 +++ b/crates/iceberg/src/arrow/reader/background.rs
 @@ -0,0 +1,218 @@
@@ -267,7 +268,7 @@ index 0000000000000000000000000000000000000000..e22154be528a73e179af73dc5bd3134a
 +    }
 +}
 diff --git a/crates/iceberg/src/arrow/reader/mod.rs b/crates/iceberg/src/arrow/reader/mod.rs
-index a6bdb90b30e16993d12f1afe88de171abd4cd0c8..14093b3ac471b3898b127e07bcd0b09dc3aa60bd 100644
+index a7ee43fc..2fe7ec3c 100644
 --- a/crates/iceberg/src/arrow/reader/mod.rs
 +++ b/crates/iceberg/src/arrow/reader/mod.rs
 @@ -34,6 +34,7 @@ const DEFAULT_RANGE_FETCH_CONCURRENCY: usize = 10;
@@ -278,7 +279,7 @@ index a6bdb90b30e16993d12f1afe88de171abd4cd0c8..14093b3ac471b3898b127e07bcd0b09d
  mod file_reader;
  mod options;
  mod pipeline;
-@@ -62,6 +63,7 @@ pub struct ArrowReaderBuilder {
+@@ -61,6 +62,7 @@ pub struct ArrowReaderBuilder {
      bloom_filter_enabled: bool,
      parquet_read_options: ParquetReadOptions,
      runtime: Runtime,
@@ -286,7 +287,7 @@ index a6bdb90b30e16993d12f1afe88de171abd4cd0c8..14093b3ac471b3898b127e07bcd0b09d
  }
  
  impl ArrowReaderBuilder {
-@@ -78,6 +80,7 @@ impl ArrowReaderBuilder {
+@@ -77,6 +79,7 @@ impl ArrowReaderBuilder {
              bloom_filter_enabled: false,
              parquet_read_options: ParquetReadOptions::builder().build(),
              runtime,
@@ -294,7 +295,7 @@ index a6bdb90b30e16993d12f1afe88de171abd4cd0c8..14093b3ac471b3898b127e07bcd0b09d
          }
      }
  
-@@ -94,6 +97,12 @@ impl ArrowReaderBuilder {
+@@ -93,6 +96,12 @@ impl ArrowReaderBuilder {
          self
      }
  
@@ -307,7 +308,7 @@ index a6bdb90b30e16993d12f1afe88de171abd4cd0c8..14093b3ac471b3898b127e07bcd0b09d
      /// Determines whether to enable row group filtering.
      pub fn with_row_group_filtering_enabled(mut self, row_group_filtering_enabled: bool) -> Self {
          self.row_group_filtering_enabled = row_group_filtering_enabled;
-@@ -162,6 +171,7 @@ impl ArrowReaderBuilder {
+@@ -161,6 +170,7 @@ impl ArrowReaderBuilder {
              row_selection_enabled: self.row_selection_enabled,
              bloom_filter_enabled: self.bloom_filter_enabled,
              parquet_read_options: self.parquet_read_options,
@@ -315,14 +316,14 @@ index a6bdb90b30e16993d12f1afe88de171abd4cd0c8..14093b3ac471b3898b127e07bcd0b09d
          }
      }
  }
-@@ -180,4 +190,5 @@ pub struct ArrowReader {
+@@ -179,4 +189,5 @@ pub struct ArrowReader {
      row_selection_enabled: bool,
      bloom_filter_enabled: bool,
      parquet_read_options: ParquetReadOptions,
 +    background_runtime: Option<Runtime>,
  }
 diff --git a/crates/iceberg/src/arrow/reader/pipeline.rs b/crates/iceberg/src/arrow/reader/pipeline.rs
-index 51734caa44f5bafa88a09e72edb6b44e1ab711a9..6f10ed9ad97cc39cbe9122aa7b9f2bc92d0dcc09 100644
+index 28037b68..bf8a2b5c 100644
 --- a/crates/iceberg/src/arrow/reader/pipeline.rs
 +++ b/crates/iceberg/src/arrow/reader/pipeline.rs
 @@ -104,6 +104,12 @@ impl ArrowReader {
@@ -339,7 +340,7 @@ index 51734caa44f5bafa88a09e72edb6b44e1ab711a9..6f10ed9ad97cc39cbe9122aa7b9f2bc9
      }
  }
 diff --git a/crates/iceberg/src/arrow/scan_metrics.rs b/crates/iceberg/src/arrow/scan_metrics.rs
-index 642190c57d3cb3b1511467ef62fe556b6daefef8..188f87a4416bdd14fd09aec20e03ab94bd733f21 100644
+index 642190c5..188f87a4 100644
 --- a/crates/iceberg/src/arrow/scan_metrics.rs
 +++ b/crates/iceberg/src/arrow/scan_metrics.rs
 @@ -20,6 +20,7 @@
@@ -384,7 +385,7 @@ index 642190c57d3cb3b1511467ef62fe556b6daefef8..188f87a4416bdd14fd09aec20e03ab94
  
  /// Result of [`ArrowReader::read`](super::ArrowReader::read), containing the
 diff --git a/crates/iceberg/src/runtime/mod.rs b/crates/iceberg/src/runtime/mod.rs
-index 86733287a2889ca9472b724743b2a8d59f7bfee0..8491c8930944c40a1a8ab655aa91a881cc52794c 100644
+index 86733287..8491c893 100644
 --- a/crates/iceberg/src/runtime/mod.rs
 +++ b/crates/iceberg/src/runtime/mod.rs
 @@ -70,6 +70,10 @@ impl RuntimeHandle {
@@ -398,3 +399,6 @@ index 86733287a2889ca9472b724743b2a8d59f7bfee0..8491c8930944c40a1a8ab655aa91a881
      /// Spawn an async task.
      pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
      where
+-- 
+2.46.0
+

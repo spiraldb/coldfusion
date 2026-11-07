@@ -1,9 +1,10 @@
-From 636504bb1fa4b31917f32e090a5d5df7c3345064 Mon Sep 17 00:00:00 2001
+From 6c22c0f433f1d9bda980d44641c3fdc7b8e16c13 Mon Sep 17 00:00:00 2001
 From: Daniel King <dan@spiraldb.com>
-Date: Fri, 6 Nov 2026 12:03:29 -0500
-Subject: [PATCH 02/22] Split Parquet scan tasks using physical row group
- offsets
+Date: Sat, 7 Nov 2026 00:49:57 -0500
+Subject: [PATCH 1/9] Split Parquet scans using physical row group offsets
 
+Retains the native-reader changes from 636504bb1fa4b31917f32e090a5d5df7c3345064.
+The obsolete integration changes are omitted from this series.
 ---
  crates/iceberg/public-api.txt                 |  1 +
  crates/iceberg/src/arrow/reader/row_filter.rs | 48 ++++++++++++++-----
@@ -11,7 +12,7 @@ Subject: [PATCH 02/22] Split Parquet scan tasks using physical row group
  3 files changed, 82 insertions(+), 11 deletions(-)
 
 diff --git a/crates/iceberg/public-api.txt b/crates/iceberg/public-api.txt
-index 333af6df63497a0a85413ea08a934fa7919218d7..d6bc408aa1883c327433053c7415d77fa6db71e0 100644
+index 333af6df..d6bc408a 100644
 --- a/crates/iceberg/public-api.txt
 +++ b/crates/iceberg/public-api.txt
 @@ -1378,6 +1378,7 @@ pub fn iceberg::scan::FileScanTask::sort_order(&self) -> core::option::Option<&i
@@ -23,7 +24,7 @@ index 333af6df63497a0a85413ea08a934fa7919218d7..d6bc408aa1883c327433053c7415d77f
  pub fn iceberg::scan::FileScanTask::clone(&self) -> iceberg::scan::FileScanTask
  impl core::cmp::PartialEq for iceberg::scan::FileScanTask
 diff --git a/crates/iceberg/src/arrow/reader/row_filter.rs b/crates/iceberg/src/arrow/reader/row_filter.rs
-index 331e7f9656165ba17282fc576513fba3f0602015..f9a884c851cf1ef63617b46f2e106a74e3a8020f 100644
+index 331e7f96..f9a884c8 100644
 --- a/crates/iceberg/src/arrow/reader/row_filter.rs
 +++ b/crates/iceberg/src/arrow/reader/row_filter.rs
 @@ -198,22 +198,42 @@ impl ArrowReader {
@@ -106,7 +107,7 @@ index 331e7f9656165ba17282fc576513fba3f0602015..f9a884c851cf1ef63617b46f2e106a74
          println!(
              "Row group 0: {} rows, starts at byte {}, {} bytes compressed",
 diff --git a/crates/iceberg/src/scan/task.rs b/crates/iceberg/src/scan/task.rs
-index 45940b0dfd64c9dc2fdb483c6c16e145921f644a..027e38316af326f9eb5f23e1688f71131f7e0f14 100644
+index 45940b0d..027e3831 100644
 --- a/crates/iceberg/src/scan/task.rs
 +++ b/crates/iceberg/src/scan/task.rs
 @@ -168,6 +168,25 @@ impl FileScanTask {
@@ -167,3 +168,6 @@ index 45940b0dfd64c9dc2fdb483c6c16e145921f644a..027e38316af326f9eb5f23e1688f7113
      fn schema_and_spec(
          primitive_type: PrimitiveType,
          transform: Transform,
+-- 
+2.46.0
+

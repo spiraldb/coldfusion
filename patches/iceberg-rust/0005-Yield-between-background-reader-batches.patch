@@ -1,15 +1,16 @@
-From 3a8a76c5849293722238789477b39e53adf41166 Mon Sep 17 00:00:00 2001
+From d412cf8de0e988072b1ca0ae24cfb57c7213190d Mon Sep 17 00:00:00 2001
 From: Daniel King <dan@spiraldb.com>
-Date: Fri, 6 Nov 2026 13:56:40 -0500
-Subject: [PATCH 13/22] Yield between background batches for cooperative CPU
- scheduling
+Date: Sat, 7 Nov 2026 00:49:57 -0500
+Subject: [PATCH 5/9] Yield between background reader batches
 
+Retains the native-reader changes from 3a8a76c5849293722238789477b39e53adf41166.
+The obsolete integration changes are omitted from this series.
 ---
  crates/iceberg/src/arrow/reader/background.rs | 1 +
  1 file changed, 1 insertion(+)
 
 diff --git a/crates/iceberg/src/arrow/reader/background.rs b/crates/iceberg/src/arrow/reader/background.rs
-index 9b93fdbd146d14876dcae54db65f50c3a0a41077..9f2c0d9161d77c0d8509fdca91e4bded4e0e5a65 100644
+index 9b93fdbd..9f2c0d91 100644
 --- a/crates/iceberg/src/arrow/reader/background.rs
 +++ b/crates/iceberg/src/arrow/reader/background.rs
 @@ -62,6 +62,7 @@ pub(super) fn read_in_background(
@@ -20,3 +21,6 @@ index 9b93fdbd146d14876dcae54db65f50c3a0a41077..9f2c0d9161d77c0d8509fdca91e4bded
          }
      };
      let worker = runtime.cpu().spawn(Abortable::new(producer, registration));
+-- 
+2.46.0
+

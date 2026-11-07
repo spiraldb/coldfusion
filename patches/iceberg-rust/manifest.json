@@ -1,166 +1,172 @@
 {
   "repository": "https://github.com/spiraldb/iceberg-rust",
+  "branch": "codex/coldfusion-reader",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "930277e0209bec6ff321d06ae9b4a0f2e794000f",
+  "tip_commit": "45376aebbfc5fa0ba94b18837cb2443eb87a68ae",
   "tip_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
-  "patch_count": 25,
+  "patch_count": 9,
+  "historical_tip_commit": "930277e0209bec6ff321d06ae9b4a0f2e794000f",
+  "historical_tip_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
+  "matches_historical_tree": true,
   "patches": [
     {
-      "patch": "0001-Make-Vortex-support-optional-and-disabled-by-default.patch",
-      "commit": "eed7a41cebd73263aa6f8b73b22095e5ccf30748",
-      "subject": "Make Vortex support optional and disabled by default",
-      "sha256": "47f9986b826e1c1a5d7ceff1d398c9cd1f496970e0451ed54eae518642147932"
+      "patch": "0001-Split-Parquet-scans-using-physical-row-group-offsets.patch",
+      "commit": "6c22c0f433f1d9bda980d44641c3fdc7b8e16c13",
+      "subject": "Split Parquet scans using physical row group offsets",
+      "original_commit": "636504bb1fa4b31917f32e090a5d5df7c3345064",
+      "sha256": "d130897b88fff86d932c885f93498af813910952d4a25d763463be0674e693f5",
+      "original_series_index": 2
     },
     {
-      "patch": "0002-Split-Parquet-scan-tasks-using-physical-row-group-of.patch",
-      "commit": "636504bb1fa4b31917f32e090a5d5df7c3345064",
-      "subject": "Split Parquet scan tasks using physical row group offsets",
-      "sha256": "47041d5aef6844c000904789aec42858173b9e71a69f7960663632a5a4e98cac"
+      "patch": "0002-Preserve-promoted-Parquet-predicate-comparisons.patch",
+      "commit": "18ba96a7eac81ec53a19c6088bc80a17706910d5",
+      "subject": "Preserve promoted Parquet predicate comparisons",
+      "original_commit": "efedf229d2a071973f0511b9d1111e988fe2a0cc",
+      "sha256": "711fc8f2adf6a7738627074c6de779400f4543d075a7cd18f0bcd7b92749f002",
+      "original_series_index": 7
     },
     {
-      "patch": "0003-Expose-parallel-Parquet-Iceberg-scans-to-DataFusion-.patch",
-      "commit": "5ca9dac1b269540dfe8aa326ab42362bbb7ba52b",
-      "subject": "Expose parallel Parquet Iceberg scans to DataFusion consumers",
-      "sha256": "3ff3d90c61ab459913edbd5326e122ebb356ec55694e1088c224b90df93357b1"
+      "patch": "0003-Support-bounded-background-decoding-on-the-CPU-execu.patch",
+      "commit": "33a62e31cc7fca09ae367747a3597d53b3018e77",
+      "subject": "Support bounded background decoding on the CPU executor",
+      "original_commit": "b88bac0a2bdfd8e491bb98a275a677893ee88c59",
+      "sha256": "ef3ed5fa1afa8929a4bf2636583adb0d4a5a8eb532bd8904b4583e63e384e501",
+      "original_series_index": 8
     },
     {
-      "patch": "0004-Push-conservative-schema-aware-predicates-into-Icebe.patch",
-      "commit": "a21a8d2049bc60d47929ea7212c7537348980356",
-      "subject": "Push conservative schema-aware predicates into Iceberg scans",
-      "sha256": "defc8837b3d5cfde108e622173708de5a9e016532414b403b8480f636998ef16"
+      "patch": "0004-Observe-background-decode-time-through-cancellation.patch",
+      "commit": "cd721649bca0c479f9878640c9e4b644480c11ac",
+      "subject": "Observe background decode time through cancellation",
+      "original_commit": "1486e2b6eaa7accafd68eff325e84b3e74e9d04b",
+      "sha256": "0c63d1737e3fcbf0ca6b20ea62f02cb5754a2ea8d93db2b170deb2e1cc764828",
+      "original_series_index": 10
     },
     {
-      "patch": "0005-Verify-scan-deletes-and-schema-evolution-against-rea.patch",
-      "commit": "77e435776a2d0bae4c1bcad69c8981de8309654c",
-      "subject": "Verify scan deletes and schema evolution against real Parquet files",
-      "sha256": "bbed6c67c2139e2dd745da1fd611b648426d49c832bd2def3958dd17d75db677"
+      "patch": "0005-Yield-between-background-reader-batches.patch",
+      "commit": "d412cf8de0e988072b1ca0ae24cfb57c7213190d",
+      "subject": "Yield between background reader batches",
+      "original_commit": "3a8a76c5849293722238789477b39e53adf41166",
+      "sha256": "f065d1d61a32d78327cb6fd7b8c1f9e13f68e9f1d2d470a8755975067d1ef8a3",
+      "original_series_index": 13
     },
     {
-      "patch": "0006-Document-the-parallel-provider-API-and-scan-contract.patch",
-      "commit": "b75bcdb0724dbca245ca9d69d20664e67b92637f",
-      "subject": "Document the parallel provider API and scan contract",
-      "sha256": "4ecf5867998d3a2b1b7a4aca0f789203e19c40db6774fd29ce5d908e2b2591a6"
-    },
-    {
-      "patch": "0007-Preserve-widened-values-in-Parquet-predicate-compari.patch",
-      "commit": "efedf229d2a071973f0511b9d1111e988fe2a0cc",
-      "subject": "Preserve widened values in Parquet predicate comparisons",
-      "sha256": "9f479fb79151f96585f6b0481fb794b2d6aaa81063507c8e0dcd9aa3d2fdb70e"
-    },
-    {
-      "patch": "0008-Drive-Parquet-reads-on-the-configured-CPU-executor-w.patch",
-      "commit": "b88bac0a2bdfd8e491bb98a275a677893ee88c59",
-      "subject": "Drive Parquet reads on the configured CPU executor with bounded buffering",
-      "sha256": "0938498e8eef682921a06e0aa2c0b2cbbc3189c8d0fc24af9a4950dee7a433f8"
-    },
-    {
-      "patch": "0009-Decode-each-DataFusion-scan-partition-on-the-Iceberg.patch",
-      "commit": "6acff8d55be27db16bfdf6ea68755f24881cc384",
-      "subject": "Decode each DataFusion scan partition on the Iceberg CPU executor",
-      "sha256": "eab4f88e7a30ac8cb35feabbe10ecf479db7ac9b256cb65d3b8f4a535aa4445e"
-    },
-    {
-      "patch": "0010-Account-for-background-decode-CPU-through-consumer-c.patch",
-      "commit": "1486e2b6eaa7accafd68eff325e84b3e74e9d04b",
-      "subject": "Account for background decode CPU through consumer cancellation",
-      "sha256": "22d19e98d9e683d1d7b4188bed716d68b2981eb9fceef7b951d373a0b9c65c4a"
-    },
-    {
-      "patch": "0011-Evaluate-cheap-Parquet-predicate-conjuncts-before-la.patch",
-      "commit": "f8d72b0392b8f0e7c448461d60e0ced99fbed388",
-      "subject": "Evaluate cheap Parquet predicate conjuncts before later columns",
-      "sha256": "8ca1aab10b4d0a928e655b5847cff7736ef3dadfa2a35668bbdf9bc593f19747"
-    },
-    {
-      "patch": "0012-Revert-Evaluate-cheap-Parquet-predicate-conjuncts-be.patch",
-      "commit": "943df5d17f75f6c450ff12089083b1972e4478dc",
-      "subject": "Revert \"Evaluate cheap Parquet predicate conjuncts before later columns\"",
-      "sha256": "3520b3ab62860ea6c1f2207506a7f72d7b64f0d3f474dc1f09f7cd67cff921a6"
-    },
-    {
-      "patch": "0013-Yield-between-background-batches-for-cooperative-CPU.patch",
-      "commit": "3a8a76c5849293722238789477b39e53adf41166",
-      "subject": "Yield between background batches for cooperative CPU scheduling",
-      "sha256": "39854513fcbc3dafaa2c5c4ce8a73f99fb5e5501b21f21b7faba40ca065daf23"
-    },
-    {
-      "patch": "0014-Balance-scan-byte-budgets-across-data-file-boundarie.patch",
-      "commit": "0f05fc5eb955368684ca179866eb8da528e19d3b",
-      "subject": "Balance scan byte budgets across data file boundaries",
-      "sha256": "effa13e3af462ae09fb0a13904c3fcaa6ef1eaaf91c390809135a3ba9ca0ffdf"
-    },
-    {
-      "patch": "0015-Allow-per-file-Parquet-row-filter-factories.patch",
-      "commit": "b4f0f71b8422744bd99f5bc4eee66aaf86eb2102",
+      "patch": "0006-Allow-per-file-Parquet-row-filter-factories.patch",
+      "commit": "b75c074eeed05134be876c6d0f7e22f0d81aa593",
       "subject": "Allow per-file Parquet row filter factories",
-      "sha256": "3ba1e173639845ba709bf6e7a279c90d84932d9f09280e512385217827ed3437"
+      "original_commit": "b4f0f71b8422744bd99f5bc4eee66aaf86eb2102",
+      "sha256": "f8c874f523b510e61fbd77307c829a9fb5a32a91c47d02244f35a9cc6db3ef63",
+      "original_series_index": 15
     },
     {
-      "patch": "0016-Decode-top-level-Iceberg-strings-as-Arrow-views-in-D.patch",
-      "commit": "f125ab6449dbceb58ca125c980c40b522ad3e90a",
-      "subject": "Decode top-level Iceberg strings as Arrow views in DataFusion",
-      "sha256": "2b1295ff7885f6d1d45b8c877646f4a086dd9eda114639f9a95772daaa6bb223"
+      "patch": "0007-Support-opt-in-Arrow-view-output-in-native-readers.patch",
+      "commit": "09af27a93e0b4d94bc45e42d50435b2c6101dbbd",
+      "subject": "Support opt-in Arrow view output in native readers",
+      "original_commit": "f125ab6449dbceb58ca125c980c40b522ad3e90a",
+      "sha256": "bbcc3a896332a12e65a35662707c274f8785476811f7048a0ee71d4e90aa1581",
+      "original_series_index": 16
     },
     {
-      "patch": "0017-Apply-live-DataFusion-filters-during-Iceberg-Parquet.patch",
-      "commit": "69f157b716ba4bc776705826a1b7f4923b9573ed",
-      "subject": "Apply live DataFusion filters during Iceberg Parquet scans",
-      "sha256": "375030438964627e65c0a2d5f3898ed1b00e4b0f828d3e5ff89b3efa205c9e00"
+      "patch": "0008-Poll-foreground-Parquet-reads-with-the-IO-driver.patch",
+      "commit": "13545bbe18a9f98a489484c4d3b13b3075b351d4",
+      "subject": "Poll foreground Parquet reads with the IO driver",
+      "original_commit": "277fa34316e90e17efb38d318f71175900783f01",
+      "sha256": "4e5106123a77e8f37951132724558e3331b8359da6534aab09644c97dc8e6079",
+      "original_series_index": 20
     },
     {
-      "patch": "0018-Use-canonical-Arrow-strings-for-DataFusion-scans.patch",
-      "commit": "2e4c372c2199206bcef28d75768f4a173cb1ca8d",
-      "subject": "Use canonical Arrow strings for DataFusion scans",
-      "sha256": "1454565e2dcf61242e8a12e4fcbe5a66c8da7a6db941d95a1f11a27807c9153e"
-    },
-    {
-      "patch": "0019-Limit-Iceberg-dynamic-filtering-to-cheap-predicates.patch",
-      "commit": "6bc2ff7a860e62eaff73c84ae11b0a2f994dc789",
-      "subject": "Limit Iceberg dynamic filtering to cheap predicates",
-      "sha256": "4ae6a2a8d6ddda5cb6807d2b99da246b4e1dafbcc3aa620568036901ecde4743"
-    },
-    {
-      "patch": "0020-Poll-foreground-Parquet-reads-with-the-configured-IO.patch",
-      "commit": "277fa34316e90e17efb38d318f71175900783f01",
-      "subject": "Poll foreground Parquet reads with the configured IO driver",
-      "sha256": "6103c0394d2b51e626e7999625ee5cd9e491383729f763487799f6e07792fbde"
-    },
-    {
-      "patch": "0021-Decode-on-DataFusion-workers-when-query-parallelism-.patch",
-      "commit": "252ab5699fee9fb1f35c922bce722bb23f745ddb",
-      "subject": "Decode on DataFusion workers when query parallelism is sufficient",
-      "sha256": "1e272d4aaf0c1b85c7c4d3a6f51f86588a490d79cbd459536c67ae1b605974f9"
-    },
-    {
-      "patch": "0022-Report-projected-Arrow-output-sizes-to-DataFusion.patch",
-      "commit": "04c96e42614ccf36f89fb3f699739eeb45e9838b",
-      "subject": "Report projected Arrow output sizes to DataFusion",
-      "sha256": "f6d0ecf2eea8fcb6d8968711892fd55de67cfd22b0c36154d4d75bb127c601e5"
-    },
-    {
-      "patch": "0023-Restore-built-in-Vortex-Iceberg-readers-and-writers.patch",
-      "commit": "278b205d05a87695be6f5d2bc5f76b09f4456256",
-      "subject": "Restore built-in Vortex Iceberg readers and writers",
-      "sha256": "adee76f62905413722eabb9a05e4430110f9b85544553da90ef7d483e4774624"
-    },
-    {
-      "patch": "0024-Remove-obsolete-DataFusion-adapter-from-native-worksp.patch",
-      "commit": "d28e192ceba4105ff4b4480021d94e3df747915b",
-      "subject": "Remove obsolete DataFusion adapter from native workspace",
-      "sha256": "290b02489f3a5de70dcbb3ff23c8e295a6b0657fd3c3794c02663c357898b5dc"
-    },
-    {
-      "patch": "0025-Preserve-promoted-types-in-Parquet-page-statistics.patch",
-      "commit": "930277e0209bec6ff321d06ae9b4a0f2e794000f",
+      "patch": "0009-Preserve-promoted-types-in-Parquet-page-statistics.patch",
+      "commit": "45376aebbfc5fa0ba94b18837cb2443eb87a68ae",
       "subject": "Preserve promoted types in Parquet page statistics",
-      "sha256": "53c058394f8faf72837fa58787e7eebe8530cac0e5c52702553b53e443dba49d"
+      "original_commit": "930277e0209bec6ff321d06ae9b4a0f2e794000f",
+      "sha256": "24f3c82e66a80d62c23255c503749b407aa264ab313109857902c7158596c4f1",
+      "original_series_index": 25
     }
   ],
+  "removed_empty_groups": {
+    "vortex_feature_gate": {
+      "original_commits": [
+        "eed7a41cebd73263aa6f8b73b22095e5ccf30748",
+        "278b205d05a87695be6f5d2bc5f76b09f4456256"
+      ],
+      "forward_and_reverse_patch_id": "6acebd179f07bbb31d317571224bfcd4fed075eb"
+    },
+    "staged_conjunct_experiment": {
+      "original_commits": [
+        "f8d72b0392b8f0e7c448461d60e0ced99fbed388",
+        "943df5d17f75f6c450ff12089083b1972e4478dc"
+      ],
+      "forward_and_reverse_patch_id": "108b66dfd4bccc64423103d2a675e6e6fcc26d3c"
+    },
+    "obsolete_provider_lifetime": {
+      "paths": [
+        "Cargo.lock",
+        "crates/integrations/datafusion"
+      ],
+      "endpoint_paths_unchanged": true,
+      "cargo_lock_blob": "f97aa6714d0a354158515827e7819c433bff8afa",
+      "mixed_commits_native_portions_retained": [
+        "efedf229d2a071973f0511b9d1111e988fe2a0cc",
+        "1486e2b6eaa7accafd68eff325e84b3e74e9d04b",
+        "f125ab6449dbceb58ca125c980c40b522ad3e90a"
+      ],
+      "provider_only_original_commits": [
+        {
+          "original_series_index": 3,
+          "commit": "5ca9dac1b269540dfe8aa326ab42362bbb7ba52b"
+        },
+        {
+          "original_series_index": 4,
+          "commit": "a21a8d2049bc60d47929ea7212c7537348980356"
+        },
+        {
+          "original_series_index": 5,
+          "commit": "77e435776a2d0bae4c1bcad69c8981de8309654c"
+        },
+        {
+          "original_series_index": 6,
+          "commit": "b75bcdb0724dbca245ca9d69d20664e67b92637f"
+        },
+        {
+          "original_series_index": 9,
+          "commit": "6acff8d55be27db16bfdf6ea68755f24881cc384"
+        },
+        {
+          "original_series_index": 14,
+          "commit": "0f05fc5eb955368684ca179866eb8da528e19d3b"
+        },
+        {
+          "original_series_index": 17,
+          "commit": "69f157b716ba4bc776705826a1b7f4923b9573ed"
+        },
+        {
+          "original_series_index": 18,
+          "commit": "2e4c372c2199206bcef28d75768f4a173cb1ca8d"
+        },
+        {
+          "original_series_index": 19,
+          "commit": "6bc2ff7a860e62eaff73c84ae11b0a2f994dc789"
+        },
+        {
+          "original_series_index": 21,
+          "commit": "252ab5699fee9fb1f35c922bce722bb23f745ddb"
+        },
+        {
+          "original_series_index": 22,
+          "commit": "04c96e42614ccf36f89fb3f699739eeb45e9838b"
+        },
+        {
+          "original_series_index": 24,
+          "commit": "d28e192ceba4105ff4b4480021d94e3df747915b"
+        }
+      ]
+    }
+  },
   "verification": {
-    "method": "Sequential git apply --index in a detached worktree at base; git write-tree equals the published tip tree. No commits created.",
-    "verified_utc": "2026-11-07T04:41:07.449886+00:00",
+    "method": "Sequential git apply --index in an owned detached worktree at the base; git write-tree equals both compacted and historical tip trees. No commits created. Temporary worktree removed after verification.",
+    "verified_utc": "2026-11-07T05:52:45.427857+00:00",
     "applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
-    "matches_tip_tree": true
+    "matches_tip_tree": true,
+    "matches_historical_tree": true
   }
 }

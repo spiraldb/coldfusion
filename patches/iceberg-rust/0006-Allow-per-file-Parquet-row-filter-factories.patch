@@ -1,8 +1,10 @@
-From b4f0f71b8422744bd99f5bc4eee66aaf86eb2102 Mon Sep 17 00:00:00 2001
+From b75c074eeed05134be876c6d0f7e22f0d81aa593 Mon Sep 17 00:00:00 2001
 From: Daniel King <dan@spiraldb.com>
-Date: Fri, 6 Nov 2026 14:25:52 -0500
-Subject: [PATCH 15/22] Allow per-file Parquet row filter factories
+Date: Sat, 7 Nov 2026 00:49:57 -0500
+Subject: [PATCH 6/9] Allow per-file Parquet row filter factories
 
+Retains the native-reader changes from b4f0f71b8422744bd99f5bc4eee66aaf86eb2102.
+The obsolete integration changes are omitted from this series.
 ---
  crates/iceberg/public-api.txt               |   1 +
  crates/iceberg/src/arrow/reader/mod.rs      |  35 +++++++
@@ -10,7 +12,7 @@ Subject: [PATCH 15/22] Allow per-file Parquet row filter factories
  3 files changed, 142 insertions(+), 4 deletions(-)
 
 diff --git a/crates/iceberg/public-api.txt b/crates/iceberg/public-api.txt
-index ac759012ecd2f3df0a49c6efe1f8007cab525ec0..6c0f175312303e932cce86744f139478a165d8c5 100644
+index ac759012..6c0f1753 100644
 --- a/crates/iceberg/public-api.txt
 +++ b/crates/iceberg/public-api.txt
 @@ -79,6 +79,7 @@ pub fn iceberg::arrow::ArrowReaderBuilder::with_data_file_concurrency_limit(self
@@ -22,7 +24,7 @@ index ac759012ecd2f3df0a49c6efe1f8007cab525ec0..6c0f175312303e932cce86744f139478
  pub fn iceberg::arrow::ArrowReaderBuilder::with_row_selection_enabled(self, row_selection_enabled: bool) -> Self
  pub struct iceberg::arrow::PartitionValueCalculator
 diff --git a/crates/iceberg/src/arrow/reader/mod.rs b/crates/iceberg/src/arrow/reader/mod.rs
-index 15a6fecb8ab784f85520227ee8536baf2eff8ed3..322cd0b4e502378913ef75a01f9ba2145976833c 100644
+index dd22d88f..8c8cc807 100644
 --- a/crates/iceberg/src/arrow/reader/mod.rs
 +++ b/crates/iceberg/src/arrow/reader/mod.rs
 @@ -20,6 +20,10 @@
@@ -52,7 +54,7 @@ index 15a6fecb8ab784f85520227ee8536baf2eff8ed3..322cd0b4e502378913ef75a01f9ba214
  
  mod background;
  mod file_reader;
-@@ -70,6 +83,7 @@ pub struct ArrowReaderBuilder {
+@@ -69,6 +82,7 @@ pub struct ArrowReaderBuilder {
      runtime: Runtime,
      background_reads: bool,
      compute_time_observer: Option<ComputeTimeObserver>,
@@ -60,7 +62,7 @@ index 15a6fecb8ab784f85520227ee8536baf2eff8ed3..322cd0b4e502378913ef75a01f9ba214
  }
  
  impl ArrowReaderBuilder {
-@@ -88,6 +102,7 @@ impl ArrowReaderBuilder {
+@@ -87,6 +101,7 @@ impl ArrowReaderBuilder {
              runtime,
              background_reads: false,
              compute_time_observer: None,
@@ -68,7 +70,7 @@ index 15a6fecb8ab784f85520227ee8536baf2eff8ed3..322cd0b4e502378913ef75a01f9ba214
          }
      }
  
-@@ -117,6 +132,24 @@ impl ArrowReaderBuilder {
+@@ -116,6 +131,24 @@ impl ArrowReaderBuilder {
          self
      }
  
@@ -93,7 +95,7 @@ index 15a6fecb8ab784f85520227ee8536baf2eff8ed3..322cd0b4e502378913ef75a01f9ba214
      /// Determines whether to enable row group filtering.
      pub fn with_row_group_filtering_enabled(mut self, row_group_filtering_enabled: bool) -> Self {
          self.row_group_filtering_enabled = row_group_filtering_enabled;
-@@ -187,6 +220,7 @@ impl ArrowReaderBuilder {
+@@ -186,6 +219,7 @@ impl ArrowReaderBuilder {
              parquet_read_options: self.parquet_read_options,
              background_runtime: self.background_reads.then_some(self.runtime),
              compute_time_observer: self.compute_time_observer,
@@ -101,14 +103,14 @@ index 15a6fecb8ab784f85520227ee8536baf2eff8ed3..322cd0b4e502378913ef75a01f9ba214
          }
      }
  }
-@@ -207,4 +241,5 @@ pub struct ArrowReader {
+@@ -206,4 +240,5 @@ pub struct ArrowReader {
      parquet_read_options: ParquetReadOptions,
      background_runtime: Option<Runtime>,
      compute_time_observer: Option<ComputeTimeObserver>,
 +    row_filter_factory: Option<RowFilterFactory>,
  }
 diff --git a/crates/iceberg/src/arrow/reader/pipeline.rs b/crates/iceberg/src/arrow/reader/pipeline.rs
-index 3a86098daa9781205a2099ce9dee7e808b101a11..b056759c1257b1bc6c10e1ee9db47ee3af458937 100644
+index dcc330bc..e04f5665 100644
 --- a/crates/iceberg/src/arrow/reader/pipeline.rs
 +++ b/crates/iceberg/src/arrow/reader/pipeline.rs
 @@ -27,7 +27,7 @@ use std::sync::atomic::AtomicU64;
@@ -148,7 +150,7 @@ index 3a86098daa9781205a2099ce9dee7e808b101a11..b056759c1257b1bc6c10e1ee9db47ee3
  }
  
  // Borrow an existing selection, or enumerate all groups for a whole-file scan.
-@@ -537,6 +540,16 @@ impl FileScanTaskReader {
+@@ -536,6 +539,16 @@ impl FileScanTaskReader {
          // by using a `RowSelection`.
          let mut selected_row_group_indices = None;
          let mut row_selection = None;
@@ -165,7 +167,7 @@ index 3a86098daa9781205a2099ce9dee7e808b101a11..b056759c1257b1bc6c10e1ee9db47ee3
  
          // Filter row groups based on byte range from task.start and task.length.
          // If both start and length are 0, read the entire file (backwards compatibility).
-@@ -571,7 +584,7 @@ impl FileScanTaskReader {
+@@ -570,7 +583,7 @@ impl FileScanTaskReader {
                  &iceberg_field_ids,
                  &field_id_map,
              )?;
@@ -174,7 +176,7 @@ index 3a86098daa9781205a2099ce9dee7e808b101a11..b056759c1257b1bc6c10e1ee9db47ee3
  
              if self.row_group_filtering_enabled {
                  let candidates = candidate_row_groups(
-@@ -618,6 +631,11 @@ impl FileScanTaskReader {
+@@ -617,6 +630,11 @@ impl FileScanTaskReader {
              }
          }
  
@@ -186,7 +188,7 @@ index 3a86098daa9781205a2099ce9dee7e808b101a11..b056759c1257b1bc6c10e1ee9db47ee3
          let positional_delete_indexes = delete_filter.get_delete_vector(&task);
  
          if let Some(positional_delete_indexes) = positional_delete_indexes {
-@@ -1295,6 +1313,90 @@ mod tests {
+@@ -1263,6 +1281,90 @@ mod tests {
          file_path
      }
  
@@ -277,3 +279,6 @@ index 3a86098daa9781205a2099ce9dee7e808b101a11..b056759c1257b1bc6c10e1ee9db47ee3
      fn last_updated_seq_task(
          file_path: String,
          first_row_id: Option<i64>,
+-- 
+2.46.0
+

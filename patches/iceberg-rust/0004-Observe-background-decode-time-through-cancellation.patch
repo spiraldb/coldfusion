@@ -1,19 +1,19 @@
-From 1486e2b6eaa7accafd68eff325e84b3e74e9d04b Mon Sep 17 00:00:00 2001
+From cd721649bca0c479f9878640c9e4b644480c11ac Mon Sep 17 00:00:00 2001
 From: Daniel King <dan@spiraldb.com>
-Date: Fri, 6 Nov 2026 13:05:38 -0500
-Subject: [PATCH 10/22] Account for background decode CPU through consumer
- cancellation
+Date: Sat, 7 Nov 2026 00:49:57 -0500
+Subject: [PATCH 4/9] Observe background decode time through cancellation
 
+Retains the native-reader changes from 1486e2b6eaa7accafd68eff325e84b3e74e9d04b.
+The obsolete integration changes are omitted from this series.
 ---
  crates/iceberg/public-api.txt                 |  1 +
  crates/iceberg/src/arrow/reader/background.rs | 60 +++++++++++++++++--
  crates/iceberg/src/arrow/reader/mod.rs        | 16 +++++
  crates/iceberg/src/arrow/reader/pipeline.rs   |  9 ++-
- crates/integrations/datafusion/src/scan.rs    |  9 +--
- 5 files changed, 81 insertions(+), 14 deletions(-)
+ 4 files changed, 79 insertions(+), 7 deletions(-)
 
 diff --git a/crates/iceberg/public-api.txt b/crates/iceberg/public-api.txt
-index 05079aa77daf72a1248766f79a2e9daef34ec444..ac759012ecd2f3df0a49c6efe1f8007cab525ec0 100644
+index 05079aa7..ac759012 100644
 --- a/crates/iceberg/public-api.txt
 +++ b/crates/iceberg/public-api.txt
 @@ -74,6 +74,7 @@ pub fn iceberg::arrow::ArrowReaderBuilder::new(file_io: iceberg::io::FileIO, run
@@ -25,7 +25,7 @@ index 05079aa77daf72a1248766f79a2e9daef34ec444..ac759012ecd2f3df0a49c6efe1f8007c
  pub fn iceberg::arrow::ArrowReaderBuilder::with_metadata_size_hint(self, metadata_size_hint: usize) -> Self
  pub fn iceberg::arrow::ArrowReaderBuilder::with_range_coalesce_bytes(self, range_coalesce_bytes: u64) -> Self
 diff --git a/crates/iceberg/src/arrow/reader/background.rs b/crates/iceberg/src/arrow/reader/background.rs
-index e22154be528a73e179af73dc5bd3134a55ce8cca..9b93fdbd146d14876dcae54db65f50c3a0a41077 100644
+index e22154be..9b93fdbd 100644
 --- a/crates/iceberg/src/arrow/reader/background.rs
 +++ b/crates/iceberg/src/arrow/reader/background.rs
 @@ -25,6 +25,7 @@ use futures::future::{AbortHandle, Abortable, Aborted, poll_fn};
@@ -153,7 +153,7 @@ index e22154be528a73e179af73dc5bd3134a55ce8cca..9b93fdbd146d14876dcae54db65f50c3
          drop(cpu);
          let error = io
 diff --git a/crates/iceberg/src/arrow/reader/mod.rs b/crates/iceberg/src/arrow/reader/mod.rs
-index 14093b3ac471b3898b127e07bcd0b09dc3aa60bd..15a6fecb8ab784f85520227ee8536baf2eff8ed3 100644
+index 2fe7ec3c..dd22d88f 100644
 --- a/crates/iceberg/src/arrow/reader/mod.rs
 +++ b/crates/iceberg/src/arrow/reader/mod.rs
 @@ -17,6 +17,9 @@
@@ -175,7 +175,7 @@ index 14093b3ac471b3898b127e07bcd0b09dc3aa60bd..15a6fecb8ab784f85520227ee8536baf
  mod background;
  mod file_reader;
  mod options;
-@@ -64,6 +69,7 @@ pub struct ArrowReaderBuilder {
+@@ -63,6 +68,7 @@ pub struct ArrowReaderBuilder {
      parquet_read_options: ParquetReadOptions,
      runtime: Runtime,
      background_reads: bool,
@@ -183,7 +183,7 @@ index 14093b3ac471b3898b127e07bcd0b09dc3aa60bd..15a6fecb8ab784f85520227ee8536baf
  }
  
  impl ArrowReaderBuilder {
-@@ -81,6 +87,7 @@ impl ArrowReaderBuilder {
+@@ -80,6 +86,7 @@ impl ArrowReaderBuilder {
              parquet_read_options: ParquetReadOptions::builder().build(),
              runtime,
              background_reads: false,
@@ -191,7 +191,7 @@ index 14093b3ac471b3898b127e07bcd0b09dc3aa60bd..15a6fecb8ab784f85520227ee8536baf
          }
      }
  
-@@ -103,6 +110,13 @@ impl ArrowReaderBuilder {
+@@ -102,6 +109,13 @@ impl ArrowReaderBuilder {
          self
      }
  
@@ -205,7 +205,7 @@ index 14093b3ac471b3898b127e07bcd0b09dc3aa60bd..15a6fecb8ab784f85520227ee8536baf
      /// Determines whether to enable row group filtering.
      pub fn with_row_group_filtering_enabled(mut self, row_group_filtering_enabled: bool) -> Self {
          self.row_group_filtering_enabled = row_group_filtering_enabled;
-@@ -172,6 +186,7 @@ impl ArrowReaderBuilder {
+@@ -171,6 +185,7 @@ impl ArrowReaderBuilder {
              bloom_filter_enabled: self.bloom_filter_enabled,
              parquet_read_options: self.parquet_read_options,
              background_runtime: self.background_reads.then_some(self.runtime),
@@ -213,14 +213,14 @@ index 14093b3ac471b3898b127e07bcd0b09dc3aa60bd..15a6fecb8ab784f85520227ee8536baf
          }
      }
  }
-@@ -191,4 +206,5 @@ pub struct ArrowReader {
+@@ -190,4 +205,5 @@ pub struct ArrowReader {
      bloom_filter_enabled: bool,
      parquet_read_options: ParquetReadOptions,
      background_runtime: Option<Runtime>,
 +    compute_time_observer: Option<ComputeTimeObserver>,
  }
 diff --git a/crates/iceberg/src/arrow/reader/pipeline.rs b/crates/iceberg/src/arrow/reader/pipeline.rs
-index 6f10ed9ad97cc39cbe9122aa7b9f2bc92d0dcc09..3a86098daa9781205a2099ce9dee7e808b101a11 100644
+index bf8a2b5c..dcc330bc 100644
 --- a/crates/iceberg/src/arrow/reader/pipeline.rs
 +++ b/crates/iceberg/src/arrow/reader/pipeline.rs
 @@ -105,9 +105,12 @@ impl ArrowReader {
@@ -239,49 +239,6 @@ index 6f10ed9ad97cc39cbe9122aa7b9f2bc92d0dcc09..3a86098daa9781205a2099ce9dee7e80
              None => stream,
          };
          Ok(ScanResult::new(stream, scan_metrics))
-diff --git a/crates/integrations/datafusion/src/scan.rs b/crates/integrations/datafusion/src/scan.rs
-index b2ed9138e83cbb2eb6f2f0177816774b93927be0..02f3c2e4209fc7a234becbc0b827875a24f91952 100644
---- a/crates/integrations/datafusion/src/scan.rs
-+++ b/crates/integrations/datafusion/src/scan.rs
-@@ -17,7 +17,6 @@
- 
- use std::fmt;
- use std::sync::Arc;
--use std::time::Duration;
- 
- use datafusion::arrow::datatypes::SchemaRef;
- use datafusion::common::stats::Precision;
-@@ -176,19 +175,20 @@ impl ExecutionPlan for IcebergScan {
-             })?
-             .clone();
-         let baseline = BaselineMetrics::new(&self.metrics, partition);
-+        let compute = baseline.elapsed_compute().clone();
-         let native = self
-             .table
-             .reader_builder()
-             .with_batch_size(self.batch_size)
-             .with_data_file_concurrency_limit(1)
-             .with_background_reads(true)
-+            .with_compute_time_observer(move |elapsed| compute.add_duration(elapsed))
-             .build()
-             .read(futures::stream::iter(tasks.into_iter().map(Ok)).boxed())
-             .map_err(external)?;
-         let io_metrics = native.metrics().clone();
-         let bytes = MetricBuilder::new(&self.metrics).counter("bytes_scanned", partition);
-         let mut bytes_recorded = 0;
--        let mut compute_recorded = 0;
-         let mut input = native.stream().map_err(external);
-         let stream = futures::stream::poll_fn(move |cx| {
-             let timer = baseline.elapsed_compute().timer();
-@@ -197,11 +197,6 @@ impl ExecutionPlan for IcebergScan {
-             let bytes_read = io_metrics.bytes_read();
-             bytes.add((bytes_read - bytes_recorded) as usize);
-             bytes_recorded = bytes_read;
--            let compute = io_metrics.elapsed_compute_nanos();
--            baseline
--                .elapsed_compute()
--                .add_duration(Duration::from_nanos(compute - compute_recorded));
--            compute_recorded = compute;
-             baseline.record_poll(poll)
-         });
-         Ok(Box::pin(RecordBatchStreamAdapter::new(
+-- 
+2.46.0
+

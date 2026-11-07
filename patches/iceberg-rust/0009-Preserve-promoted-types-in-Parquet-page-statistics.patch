@@ -1,8 +1,10 @@
-From 930277e0209bec6ff321d06ae9b4a0f2e794000f Mon Sep 17 00:00:00 2001
+From 45376aebbfc5fa0ba94b18837cb2443eb87a68ae Mon Sep 17 00:00:00 2001
 From: Daniel King <dan@spiraldb.com>
-Date: Fri, 6 Nov 2026 23:39:41 -0500
-Subject: [PATCH 25/25] Preserve promoted types in Parquet page statistics
+Date: Sat, 7 Nov 2026 00:49:58 -0500
+Subject: [PATCH 9/9] Preserve promoted types in Parquet page statistics
 
+Retains the native-reader changes from 930277e0209bec6ff321d06ae9b4a0f2e794000f.
+The obsolete integration changes are omitted from this series.
 ---
  .../src/expr/visitors/page_index_evaluator.rs | 258 +++++++++++++++++-
  1 file changed, 243 insertions(+), 15 deletions(-)
@@ -311,3 +313,6 @@ index 4e510423..418c3d77 100644
      #[test]
      fn eval_matches_no_rows_for_empty_row_group() -> Result<()> {
          let arrow_schema = Arc::new(ArrowSchema::new(vec![
+-- 
+2.46.0
+

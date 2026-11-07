@@ -1,24 +1,21 @@
-From f125ab6449dbceb58ca125c980c40b522ad3e90a Mon Sep 17 00:00:00 2001
+From 09af27a93e0b4d94bc45e42d50435b2c6101dbbd Mon Sep 17 00:00:00 2001
 From: Daniel King <dan@spiraldb.com>
-Date: Fri, 6 Nov 2026 14:28:12 -0500
-Subject: [PATCH 16/22] Decode top-level Iceberg strings as Arrow views in
- DataFusion
+Date: Sat, 7 Nov 2026 00:49:57 -0500
+Subject: [PATCH 7/9] Support opt-in Arrow view output in native readers
 
+Retains the native-reader changes from f125ab6449dbceb58ca125c980c40b522ad3e90a.
+The obsolete integration changes are omitted from this series.
 ---
- crates/iceberg/public-api.txt                 |   2 +
- crates/iceberg/src/arrow/reader/mod.rs        |  10 +
- crates/iceberg/src/arrow/reader/pipeline.rs   |  17 +-
- .../src/arrow/record_batch_transformer.rs     |  60 ++++--
- crates/iceberg/src/arrow/schema.rs            |  67 ++++++
- crates/iceberg/src/arrow/value.rs             |  78 ++++++-
- crates/integrations/datafusion/README.md      |   3 +
- crates/integrations/datafusion/src/lib.rs     |   9 +-
- crates/integrations/datafusion/src/scan.rs    |   1 +
- .../integrations/datafusion/tests/provider.rs | 195 +++++++++++++-----
- 10 files changed, 369 insertions(+), 73 deletions(-)
+ crates/iceberg/public-api.txt                 |  2 +
+ crates/iceberg/src/arrow/reader/mod.rs        | 10 +++
+ crates/iceberg/src/arrow/reader/pipeline.rs   | 17 +++-
+ .../src/arrow/record_batch_transformer.rs     | 60 ++++++++++----
+ crates/iceberg/src/arrow/schema.rs            | 67 ++++++++++++++++
+ crates/iceberg/src/arrow/value.rs             | 78 ++++++++++++++++++-
+ 6 files changed, 213 insertions(+), 21 deletions(-)
 
 diff --git a/crates/iceberg/public-api.txt b/crates/iceberg/public-api.txt
-index 6c0f175312303e932cce86744f139478a165d8c5..8752b04f135aec79990d8504fb5cf3981f5effb6 100644
+index 6c0f1753..8752b04f 100644
 --- a/crates/iceberg/public-api.txt
 +++ b/crates/iceberg/public-api.txt
 @@ -82,6 +82,7 @@ pub fn iceberg::arrow::ArrowReaderBuilder::with_range_fetch_concurrency(self, ra
@@ -38,10 +35,10 @@ index 6c0f175312303e932cce86744f139478a165d8c5..8752b04f135aec79990d8504fb5cf398
  pub fn iceberg::arrow::type_to_arrow_type(ty: &iceberg::spec::Type) -> iceberg::Result<arrow_schema::datatype::DataType>
  pub mod iceberg::cache
 diff --git a/crates/iceberg/src/arrow/reader/mod.rs b/crates/iceberg/src/arrow/reader/mod.rs
-index 322cd0b4e502378913ef75a01f9ba2145976833c..66cd3c61334aa3deb2fd14c594f62da553104b56 100644
+index 8c8cc807..6b11777f 100644
 --- a/crates/iceberg/src/arrow/reader/mod.rs
 +++ b/crates/iceberg/src/arrow/reader/mod.rs
-@@ -74,6 +74,7 @@ use projection::{
+@@ -73,6 +73,7 @@ use projection::{
  /// Builder to create ArrowReader
  pub struct ArrowReaderBuilder {
      batch_size: Option<usize>,
@@ -49,7 +46,7 @@ index 322cd0b4e502378913ef75a01f9ba2145976833c..66cd3c61334aa3deb2fd14c594f62da5
      file_io: FileIO,
      concurrency_limit_data_files: usize,
      row_group_filtering_enabled: bool,
-@@ -93,6 +94,7 @@ impl ArrowReaderBuilder {
+@@ -92,6 +93,7 @@ impl ArrowReaderBuilder {
  
          ArrowReaderBuilder {
              batch_size: None,
@@ -57,7 +54,7 @@ index 322cd0b4e502378913ef75a01f9ba2145976833c..66cd3c61334aa3deb2fd14c594f62da5
              file_io,
              concurrency_limit_data_files: num_cpus,
              row_group_filtering_enabled: true,
-@@ -119,6 +121,12 @@ impl ArrowReaderBuilder {
+@@ -118,6 +120,12 @@ impl ArrowReaderBuilder {
          self
      }
  
@@ -70,7 +67,7 @@ index 322cd0b4e502378913ef75a01f9ba2145976833c..66cd3c61334aa3deb2fd14c594f62da5
      /// Drives reads on the configured CPU runtime with bounded batch prefetching.
      pub fn with_background_reads(mut self, background_reads: bool) -> Self {
          self.background_reads = background_reads;
-@@ -207,6 +215,7 @@ impl ArrowReaderBuilder {
+@@ -206,6 +214,7 @@ impl ArrowReaderBuilder {
      pub fn build(self) -> ArrowReader {
          ArrowReader {
              batch_size: self.batch_size,
@@ -78,7 +75,7 @@ index 322cd0b4e502378913ef75a01f9ba2145976833c..66cd3c61334aa3deb2fd14c594f62da5
              file_io: self.file_io.clone(),
              delete_file_loader: CachingDeleteFileLoader::new(
                  self.file_io.clone(),
-@@ -229,6 +238,7 @@ impl ArrowReaderBuilder {
+@@ -228,6 +237,7 @@ impl ArrowReaderBuilder {
  #[derive(Clone)]
  pub struct ArrowReader {
      batch_size: Option<usize>,
@@ -87,7 +84,7 @@ index 322cd0b4e502378913ef75a01f9ba2145976833c..66cd3c61334aa3deb2fd14c594f62da5
      delete_file_loader: CachingDeleteFileLoader,
  
 diff --git a/crates/iceberg/src/arrow/reader/pipeline.rs b/crates/iceberg/src/arrow/reader/pipeline.rs
-index b056759c1257b1bc6c10e1ee9db47ee3af458937..a886b8621ec011c878a6239d1f22f9125fa384de 100644
+index e04f5665..0aa766ac 100644
 --- a/crates/iceberg/src/arrow/reader/pipeline.rs
 +++ b/crates/iceberg/src/arrow/reader/pipeline.rs
 @@ -39,11 +39,11 @@ use super::{
@@ -119,7 +116,7 @@ index b056759c1257b1bc6c10e1ee9db47ee3af458937..a886b8621ec011c878a6239d1f22f912
      file_io: FileIO,
      delete_file_loader: CachingDeleteFileLoader,
      row_group_filtering_enabled: bool,
-@@ -239,6 +241,7 @@ impl FileScanTaskReader {
+@@ -238,6 +240,7 @@ impl FileScanTaskReader {
              &task,
              missing_field_ids,
              install_row_number,
@@ -127,7 +124,7 @@ index b056759c1257b1bc6c10e1ee9db47ee3af458937..a886b8621ec011c878a6239d1f22f912
          )?;
  
          // Build the stream reader, reusing the already-opened file reader
-@@ -364,7 +367,8 @@ impl FileScanTaskReader {
+@@ -363,7 +366,8 @@ impl FileScanTaskReader {
          // that come back from the file, such as type promotion, default column insertion,
          // column re-ordering, partition constants, and virtual field addition (like _file)
          let mut record_batch_transformer_builder =
@@ -137,7 +134,7 @@ index b056759c1257b1bc6c10e1ee9db47ee3af458937..a886b8621ec011c878a6239d1f22f912
  
          // Add the _file metadata column if it's in the projected fields
          if task.project_field_ids().contains(&RESERVED_FIELD_ID_FILE) {
-@@ -693,6 +697,7 @@ impl FileScanTaskReader {
+@@ -692,6 +696,7 @@ impl FileScanTaskReader {
          task: &FileScanTask,
          missing_field_ids: bool,
          install_row_number: bool,
@@ -145,7 +142,7 @@ index b056759c1257b1bc6c10e1ee9db47ee3af458937..a886b8621ec011c878a6239d1f22f912
      ) -> Result<ArrowReaderMetadata> {
          // Schema resolution follows the Iceberg Column Projection rule:
          // "Columns in Iceberg data files are selected by field id."
-@@ -719,12 +724,18 @@ impl FileScanTaskReader {
+@@ -718,12 +723,18 @@ impl FileScanTaskReader {
              coerce_int96_timestamps(arrow_metadata.schema(), task.schema())
          {
              coerced
@@ -166,7 +163,7 @@ index b056759c1257b1bc6c10e1ee9db47ee3af458937..a886b8621ec011c878a6239d1f22f912
          if install_row_number {
              let row_number_field = Arc::new(
 diff --git a/crates/iceberg/src/arrow/record_batch_transformer.rs b/crates/iceberg/src/arrow/record_batch_transformer.rs
-index b8b3a403bb35e8b6de8cbc82602f48a11e2f13be..25049db28db10cfb5525ad6d6fa24bba64efb5ff 100644
+index b8b3a403..25049db2 100644
 --- a/crates/iceberg/src/arrow/record_batch_transformer.rs
 +++ b/crates/iceberg/src/arrow/record_batch_transformer.rs
 @@ -36,7 +36,7 @@ use crate::arrow::schema::try_get_field_id_from_metadata;
@@ -331,7 +328,7 @@ index b8b3a403bb35e8b6de8cbc82602f48a11e2f13be..25049db28db10cfb5525ad6d6fa24bba
  
      /// `identity(s.region)` with `region` absent from the file struct. The constant
 diff --git a/crates/iceberg/src/arrow/schema.rs b/crates/iceberg/src/arrow/schema.rs
-index 34eb597d4714d26eb4a267d797e3b860fb02ae28..698fcef7fd88e272d4c68644ec81f3d101662c1c 100644
+index 34eb597d..698fcef7 100644
 --- a/crates/iceberg/src/arrow/schema.rs
 +++ b/crates/iceberg/src/arrow/schema.rs
 @@ -35,6 +35,7 @@ use parquet::file::statistics::Statistics;
@@ -423,7 +420,7 @@ index 34eb597d4714d26eb4a267d797e3b860fb02ae28..698fcef7fd88e272d4c68644ec81f3d1
          let fields = Fields::from(vec![
              simple_field("key", DataType::Int32, false, "28"),
 diff --git a/crates/iceberg/src/arrow/value.rs b/crates/iceberg/src/arrow/value.rs
-index b3bfb3f8e369442778f6d5d4ccfb8c323a5c1e53..7ef35350f1f81a3756b1333e668545707353b562 100644
+index b3bfb3f8..7ef35350 100644
 --- a/crates/iceberg/src/arrow/value.rs
 +++ b/crates/iceberg/src/arrow/value.rs
 @@ -17,6 +17,7 @@
@@ -552,373 +549,6 @@ index b3bfb3f8e369442778f6d5d4ccfb8c323a5c1e53..7ef35350f1f81a3756b1333e66854570
      #[test]
      fn test_create_string_and_binary_arrays_repeated() {
          let text = "partition-value-2026";
-diff --git a/crates/integrations/datafusion/README.md b/crates/integrations/datafusion/README.md
-index 0659ac109959ef105bb64ca22cda65d861065c8e..ed2513471c37318ab264afbfaec72c07784a829b 100644
---- a/crates/integrations/datafusion/README.md
-+++ b/crates/integrations/datafusion/README.md
-@@ -22,6 +22,9 @@ fn context(table: Table) -> Result<SessionContext> {
- The caller keeps the table's Tokio runtime alive. A provider retains the loaded
- table's schema and snapshot; construct a new provider to observe catalog updates.
- 
-+Top-level string and binary columns use Arrow view arrays. Nested columns and
-+extension storage keep their Iceberg Arrow types.
-+
- Scans expose the session's target partition count, with a minimum of two. File
- byte ranges are balanced across consumers and own disjoint Parquet row groups.
- Each consumer has its own reader stream. Decoding runs on the table's CPU
-diff --git a/crates/integrations/datafusion/src/lib.rs b/crates/integrations/datafusion/src/lib.rs
-index f41ff0c37943d661a6496906d59efc82dd803ca0..911dbdd9e4eed78bb483ccb3d70274873a7dc1de 100644
---- a/crates/integrations/datafusion/src/lib.rs
-+++ b/crates/integrations/datafusion/src/lib.rs
-@@ -29,14 +29,12 @@ use datafusion::common::stats::Precision;
- use datafusion::common::{DataFusionError, Result, Statistics};
- use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
- use datafusion::physical_plan::ExecutionPlan;
--use iceberg::arrow::schema_to_arrow_schema;
-+use iceberg::arrow::{schema_to_arrow_schema, schema_with_view_types};
- use iceberg::table::Table;
- 
- /// Exposes an immutable Iceberg table snapshot as parallel Parquet scans.
- ///
- /// Scans expose at least two partitions, using the session's target when larger.
--///
--/// Scans expose at least two partitions, using the session's target when larger.
- #[derive(Debug)]
- pub struct IcebergTableProvider {
-     table: Table,
-@@ -46,8 +44,9 @@ pub struct IcebergTableProvider {
- impl IcebergTableProvider {
-     /// Creates a provider for the current schema and snapshot of `table`.
-     pub fn try_new(table: Table) -> Result<Self> {
--        let schema =
--            Arc::new(schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?);
-+        let schema = Arc::new(schema_with_view_types(
-+            &schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?,
-+        ));
-         Ok(Self { table, schema })
-     }
- }
-diff --git a/crates/integrations/datafusion/src/scan.rs b/crates/integrations/datafusion/src/scan.rs
-index 573e967555cbcc3c1a5c8c6cbf23ad7f4bc132ce..f0b5cb334a086883d458a1a7f22b6f9fb543284d 100644
---- a/crates/integrations/datafusion/src/scan.rs
-+++ b/crates/integrations/datafusion/src/scan.rs
-@@ -181,6 +181,7 @@ impl ExecutionPlan for IcebergScan {
-             .with_batch_size(self.batch_size)
-             .with_data_file_concurrency_limit(1)
-             .with_background_reads(true)
-+            .with_view_types(true)
-             .with_compute_time_observer(move |elapsed| compute.add_duration(elapsed))
-             .build()
-             .read(futures::stream::iter(tasks.into_iter().map(Ok)).boxed())
-diff --git a/crates/integrations/datafusion/tests/provider.rs b/crates/integrations/datafusion/tests/provider.rs
-index 6d517f73b142423c7d6aaa161b9ed1a25260068d..dbf6fb99a7552f850b0b5960453f5e40dc73e9f3 100644
---- a/crates/integrations/datafusion/tests/provider.rs
-+++ b/crates/integrations/datafusion/tests/provider.rs
-@@ -19,7 +19,8 @@ use std::collections::HashMap;
- use std::sync::Arc;
- 
- use datafusion::arrow::array::{
--    ArrayRef, BooleanArray, Float64Array, Int32Array, Int64Array, StringArray, StructArray,
-+    ArrayRef, BinaryViewArray, BooleanArray, Float64Array, Int32Array, Int64Array,
-+    LargeBinaryArray, StringArray, StringViewArray, StructArray,
- };
- use datafusion::arrow::buffer::NullBuffer;
- use datafusion::arrow::datatypes::{DataType, Field, Schema};
-@@ -38,7 +39,7 @@ use iceberg::metadata_columns::{
- };
- use iceberg::spec::{
-     DataContentType, DataFileBuilder, DataFileFormat, FormatVersion, Literal, ManifestListWriter,
--    ManifestWriterBuilder, Operation, PrimitiveType, Snapshot, Struct, Summary, Type,
-+    ManifestWriterBuilder, NestedField, Operation, PrimitiveType, Snapshot, Struct, Summary, Type,
- };
- use iceberg::table::Table;
- use iceberg::transaction::{AddColumn, ApplyTransactionAction, Transaction};
-@@ -88,10 +89,17 @@ impl Fixture {
-             Field::new("flag", DataType::Boolean, true),
-             Field::new(
-                 "payload",
--                DataType::Struct(vec![Field::new("code", DataType::Int64, true)].into()),
-+                DataType::Struct(
-+                    vec![
-+                        Field::new("code", DataType::Int64, true),
-+                        Field::new("text", DataType::Utf8, true),
-+                    ]
-+                    .into(),
-+                ),
-                 true,
-             ),
-             Field::new("special_float", DataType::Float64, true),
-+            Field::new("blob", DataType::Binary, true),
-         ]))
-         .unwrap();
-         let mut table = catalog
-@@ -126,12 +134,20 @@ impl Fixture {
-             )),
-             Arc::new(StructArray::new(
-                 payload_fields.clone(),
--                vec![Arc::new(Int64Array::from_iter(
--                    (0..ROWS).map(|id| (id % 5 != 0).then_some(id * 3)),
--                ))],
-+                vec![
-+                    Arc::new(Int64Array::from_iter(
-+                        (0..ROWS).map(|id| (id % 5 != 0).then_some(id * 3)),
-+                    )),
-+                    Arc::new(StringArray::from_iter(
-+                        (0..ROWS).map(|id| (id % 5 != 0).then(|| format!("nested-{id}"))),
-+                    )),
-+                ],
-                 Some(NullBuffer::from_iter((0..ROWS).map(|id| id % 5 != 0))),
-             )),
-             Arc::new(Float64Array::from(vec![f64::NAN; ROWS as usize])),
-+            Arc::new(LargeBinaryArray::from_iter(
-+                (0..ROWS).map(|id| (id % 11 != 0).then(|| id.to_le_bytes().to_vec())),
-+            )),
-         ])
-         .unwrap();
-         if write {
-@@ -188,6 +204,39 @@ impl Fixture {
-         )
-     }
- 
-+    fn evolve_field(&mut self, index: usize, update: impl FnOnce(&mut NestedField)) {
-+        let current = self.table.metadata().current_schema();
-+        let mut fields = current.as_struct().fields().to_vec();
-+        let mut field = fields[index].as_ref().clone();
-+        update(&mut field);
-+        fields[index] = Arc::new(field);
-+        let schema_id = current.schema_id() + 1;
-+        let schema = iceberg::spec::Schema::builder()
-+            .with_schema_id(schema_id)
-+            .with_fields(fields)
-+            .build()
-+            .unwrap();
-+        let metadata = self
-+            .table
-+            .metadata()
-+            .clone()
-+            .into_builder(self.table.metadata_location().map(str::to_owned))
-+            .add_schema(schema)
-+            .unwrap()
-+            .set_current_schema(schema_id)
-+            .unwrap()
-+            .build()
-+            .unwrap()
-+            .metadata;
-+        self.table = Table::builder()
-+            .metadata(metadata)
-+            .identifier(self.table.identifier().clone())
-+            .file_io(self.table.file_io().clone())
-+            .runtime(Runtime::current())
-+            .build()
-+            .unwrap();
-+    }
-+
-     async fn add_deletes(&mut self) {
-         let table = &self.table;
-         let positions = [0, 32, 128, 256];
-@@ -344,7 +393,16 @@ fn parallel_single_file_scans_preserve_projection_and_row_counts() {
-             IcebergTableProvider::try_new(fixture.table.clone().with_runtime(runtime)).unwrap();
-         let context = fixture.context();
-         let state = context.state();
--        let projection = vec![3, 1, 0];
-+        assert_eq!(provider.schema().field(1).data_type(), &DataType::Utf8View);
-+        assert_eq!(
-+            provider.schema().field(5).data_type(),
-+            &DataType::BinaryView
-+        );
-+        let DataType::Struct(payload) = provider.schema().field(3).data_type().clone() else {
-+            unreachable!()
-+        };
-+        assert_eq!(payload[1].data_type(), &DataType::Utf8);
-+        let projection = vec![3, 1, 0, 5];
-         let plan = provider
-             .scan(&state, Some(&projection), &[], None)
-             .await
-@@ -362,11 +420,29 @@ fn parallel_single_file_scans_preserve_projection_and_row_counts() {
-         for batch in partitions.into_iter().flatten() {
-             assert_eq!(batch.schema().field(0).name(), "payload");
-             assert_eq!(batch.schema().field(1).name(), "label");
-+            assert_eq!(batch.column(1).data_type(), &DataType::Utf8View);
-+            assert_eq!(batch.column(3).data_type(), &DataType::BinaryView);
-             let column = batch
-                 .column(2)
-                 .as_any()
-                 .downcast_ref::<Int64Array>()
-                 .unwrap();
-+            let blobs = batch
-+                .column(3)
-+                .as_any()
-+                .downcast_ref::<BinaryViewArray>()
-+                .unwrap();
-+            assert_eq!(
-+                blobs
-+                    .iter()
-+                    .map(|value| value.map(<[u8]>::to_vec))
-+                    .collect::<Vec<_>>(),
-+                column
-+                    .values()
-+                    .iter()
-+                    .map(|id| (id % 11 != 0).then(|| id.to_le_bytes().to_vec()))
-+                    .collect::<Vec<_>>()
-+            );
-             ids.extend(column.values().iter().copied());
-         }
-         ids.sort_unstable();
-@@ -604,7 +680,7 @@ async fn deletes_apply_across_split_ranges_and_unprojected_keys() {
-             batch
-                 .column(0)
-                 .as_any()
--                .downcast_ref::<StringArray>()
-+                .downcast_ref::<StringViewArray>()
-                 .unwrap()
-                 .iter()
-                 .map(|value| value.map(str::to_owned))
-@@ -622,7 +698,7 @@ async fn deletes_apply_across_split_ranges_and_unprojected_keys() {
- 
- #[tokio::test]
- async fn added_columns_and_empty_snapshots_keep_their_schema() {
--    let fixture = Fixture::new(true).await;
-+    let mut fixture = Fixture::new(true).await;
-     let tx = Transaction::new(&fixture.table);
-     let table = tx
-         .upgrade_table_version()
-@@ -644,14 +720,21 @@ async fn added_columns_and_empty_snapshots_keep_their_schema() {
-             Type::Primitive(PrimitiveType::Int),
-             Literal::int(7),
-         ))
-+        .add_column(AddColumn::required(
-+            "default_string",
-+            PrimitiveType::String.into(),
-+            Literal::string("fallback"),
-+        ))
-         .apply(tx)
-         .unwrap()
-         .commit(&fixture.catalog)
-         .await
-         .unwrap();
--    let provider = Arc::new(IcebergTableProvider::try_new(table).unwrap());
-+    fixture.table = table;
-+    fixture.evolve_field(1, |field| field.name = "renamed_label".to_owned());
-+    let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
-     let context = fixture.context();
--    let projection = vec![5];
-+    let projection = vec![6];
-     let plan = provider
-         .scan(&context.state(), Some(&projection), &[], None)
-         .await
-@@ -667,8 +750,12 @@ async fn added_columns_and_empty_snapshots_keep_their_schema() {
-         ),
-         (ROWS as usize, ROWS as usize)
-     );
--    context.register_table("evolved", provider).unwrap();
--    for filter in ["defaulted = 7", "defaulted > 6"] {
-+    context.register_table("evolved", provider.clone()).unwrap();
-+    for filter in [
-+        "defaulted = 7",
-+        "defaulted > 6",
-+        "default_string = 'fallback'",
-+    ] {
-         let batches = context
-             .sql(&format!(
-                 "SELECT id FROM evolved WHERE {filter} ORDER BY id"
-@@ -692,52 +779,66 @@ async fn added_columns_and_empty_snapshots_keep_their_schema() {
-             .collect::<Vec<_>>();
-         assert_eq!(ids, (0..ROWS).collect::<Vec<_>>(), "filter: {filter}");
-     }
--
-+    let batches = context
-+        .sql("SELECT renamed_label, default_string FROM evolved ORDER BY id")
-+        .await
-+        .unwrap()
-+        .collect()
-+        .await
-+        .unwrap();
-+    let labels = batches
-+        .iter()
-+        .flat_map(|batch| {
-+            batch
-+                .column(0)
-+                .as_any()
-+                .downcast_ref::<StringViewArray>()
-+                .unwrap()
-+                .iter()
-+                .map(|value| value.map(str::to_owned))
-+                .collect::<Vec<_>>()
-+        })
-+        .collect::<Vec<_>>();
-+    let expected = fixture
-+        .batch
-+        .column(1)
-+        .as_any()
-+        .downcast_ref::<StringArray>()
-+        .unwrap()
-+        .iter()
-+        .map(|value| value.map(str::to_owned))
-+        .collect::<Vec<_>>();
-+    assert_eq!(labels, expected);
-+    for batch in batches {
-+        assert!(
-+            batch
-+                .column(1)
-+                .as_any()
-+                .downcast_ref::<StringViewArray>()
-+                .unwrap()
-+                .iter()
-+                .all(|value| value == Some("fallback"))
-+        );
-+    }
-     let empty = Fixture::new(false).await;
-     let provider = IcebergTableProvider::try_new(empty.table).unwrap();
-     let plan = provider
-         .scan(&context.state(), None, &[], None)
-         .await
-         .unwrap();
--    assert_eq!(plan.schema(), empty.batch.schema());
-+    assert_eq!(
-+        plan.schema().as_ref(),
-+        &iceberg::arrow::schema_with_view_types(empty.batch.schema().as_ref())
-+    );
-     assert_eq!(plan.output_partitioning().partition_count(), 4);
-     assert!(collect(plan, context.task_ctx()).await.unwrap().is_empty());
- }
- 
- #[tokio::test]
- async fn promoted_integer_predicates_preserve_out_of_range_literals() {
--    let fixture = Fixture::new_with_id_type(true, DataType::Int32).await;
--    let current = fixture.table.metadata().current_schema();
--    let mut fields = current.as_struct().fields().to_vec();
--    let mut id = fields[0].as_ref().clone();
--    id.field_type = Box::new(Type::Primitive(PrimitiveType::Long));
--    fields[0] = Arc::new(id);
--    let schema_id = current.schema_id() + 1;
--    let schema = iceberg::spec::Schema::builder()
--        .with_schema_id(schema_id)
--        .with_fields(fields)
--        .build()
--        .unwrap();
--    let metadata = fixture
--        .table
--        .metadata()
--        .clone()
--        .into_builder(fixture.table.metadata_location().map(str::to_owned))
--        .add_schema(schema)
--        .unwrap()
--        .set_current_schema(schema_id)
--        .unwrap()
--        .build()
--        .unwrap()
--        .metadata;
--    let table = Table::builder()
--        .metadata(metadata)
--        .identifier(fixture.table.identifier().clone())
--        .file_io(fixture.table.file_io().clone())
--        .runtime(Runtime::current())
--        .build()
--        .unwrap();
--    let provider = Arc::new(IcebergTableProvider::try_new(table).unwrap());
-+    let mut fixture = Fixture::new_with_id_type(true, DataType::Int32).await;
-+    fixture.evolve_field(0, |field| *field.field_type = PrimitiveType::Long.into());
-+    let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
-     let context = fixture.context();
-     context
-         .register_table("promoted", provider.clone())
+-- 
+2.46.0
+

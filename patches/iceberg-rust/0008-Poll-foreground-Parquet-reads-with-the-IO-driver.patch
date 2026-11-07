@@ -1,9 +1,10 @@
-From 277fa34316e90e17efb38d318f71175900783f01 Mon Sep 17 00:00:00 2001
+From 13545bbe18a9f98a489484c4d3b13b3075b351d4 Mon Sep 17 00:00:00 2001
 From: Daniel King <dan@spiraldb.com>
-Date: Fri, 6 Nov 2026 15:14:49 -0500
-Subject: [PATCH 20/22] Poll foreground Parquet reads with the configured IO
- driver
+Date: Sat, 7 Nov 2026 00:49:58 -0500
+Subject: [PATCH 8/9] Poll foreground Parquet reads with the IO driver
 
+Retains the native-reader changes from 277fa34316e90e17efb38d318f71175900783f01.
+The obsolete integration changes are omitted from this series.
 ---
  crates/iceberg/src/arrow/reader/background.rs | 35 +++++++++++++++++--
  crates/iceberg/src/arrow/reader/mod.rs        |  4 ++-
@@ -11,7 +12,7 @@ Subject: [PATCH 20/22] Poll foreground Parquet reads with the configured IO
  3 files changed, 37 insertions(+), 4 deletions(-)
 
 diff --git a/crates/iceberg/src/arrow/reader/background.rs b/crates/iceberg/src/arrow/reader/background.rs
-index 9f2c0d9161d77c0d8509fdca91e4bded4e0e5a65..635046e9e4e41a55f268b0596c39cf10e3b0dbf1 100644
+index 9f2c0d91..635046e9 100644
 --- a/crates/iceberg/src/arrow/reader/background.rs
 +++ b/crates/iceberg/src/arrow/reader/background.rs
 @@ -27,10 +27,20 @@ use tokio::sync::mpsc;
@@ -74,7 +75,7 @@ index 9f2c0d9161d77c0d8509fdca91e4bded4e0e5a65..635046e9e4e41a55f268b0596c39cf10
      fn background_reads_use_io_driver_from_compute_workers() {
          let io = Builder::new_current_thread().enable_all().build().unwrap();
 diff --git a/crates/iceberg/src/arrow/reader/mod.rs b/crates/iceberg/src/arrow/reader/mod.rs
-index 66cd3c61334aa3deb2fd14c594f62da553104b56..e19c4245fb9820a4000cd25976c6f9ed68200134 100644
+index 6b11777f..bb91ff4b 100644
 --- a/crates/iceberg/src/arrow/reader/mod.rs
 +++ b/crates/iceberg/src/arrow/reader/mod.rs
 @@ -26,7 +26,7 @@ use parquet::file::metadata::ParquetMetaData;
@@ -86,7 +87,7 @@ index 66cd3c61334aa3deb2fd14c594f62da553104b56..e19c4245fb9820a4000cd25976c6f9ed
  use crate::util::available_parallelism;
  
  /// Default gap between byte ranges below which they are coalesced into a
-@@ -227,6 +227,7 @@ impl ArrowReaderBuilder {
+@@ -226,6 +226,7 @@ impl ArrowReaderBuilder {
              row_selection_enabled: self.row_selection_enabled,
              bloom_filter_enabled: self.bloom_filter_enabled,
              parquet_read_options: self.parquet_read_options,
@@ -94,7 +95,7 @@ index 66cd3c61334aa3deb2fd14c594f62da553104b56..e19c4245fb9820a4000cd25976c6f9ed
              background_runtime: self.background_reads.then_some(self.runtime),
              compute_time_observer: self.compute_time_observer,
              row_filter_factory: self.row_filter_factory,
-@@ -249,6 +250,7 @@ pub struct ArrowReader {
+@@ -248,6 +249,7 @@ pub struct ArrowReader {
      row_selection_enabled: bool,
      bloom_filter_enabled: bool,
      parquet_read_options: ParquetReadOptions,
@@ -103,7 +104,7 @@ index 66cd3c61334aa3deb2fd14c594f62da553104b56..e19c4245fb9820a4000cd25976c6f9ed
      compute_time_observer: Option<ComputeTimeObserver>,
      row_filter_factory: Option<RowFilterFactory>,
 diff --git a/crates/iceberg/src/arrow/reader/pipeline.rs b/crates/iceberg/src/arrow/reader/pipeline.rs
-index a886b8621ec011c878a6239d1f22f9125fa384de..d0fc28af677b82995a70f777aa4199595ea22dbe 100644
+index 0aa766ac..e3dce190 100644
 --- a/crates/iceberg/src/arrow/reader/pipeline.rs
 +++ b/crates/iceberg/src/arrow/reader/pipeline.rs
 @@ -114,7 +114,7 @@ impl ArrowReader {
@@ -115,3 +116,6 @@ index a886b8621ec011c878a6239d1f22f9125fa384de..d0fc28af677b82995a70f777aa419959
          };
          Ok(ScanResult::new(stream, scan_metrics))
      }
+-- 
+2.46.0
+
