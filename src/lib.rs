@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Parallel Parquet scans of Iceberg snapshots in DataFusion.
+//! Parallel Parquet and Vortex scans of Iceberg snapshots in DataFusion.
 
 mod predicate;
 mod scan;
@@ -35,7 +35,7 @@ pub use iceberg;
 use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::table::Table;
 
-/// Exposes an immutable Iceberg table snapshot as parallel Parquet scans.
+/// Exposes an immutable Iceberg snapshot as parallel Parquet and Vortex scans.
 ///
 /// Scans expose at least two partitions, using the session's target when larger.
 #[derive(Debug)]

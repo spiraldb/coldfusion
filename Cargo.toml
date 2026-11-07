@@ -22,8 +22,8 @@ edition = "2024"
 rust-version = "1.95"
 license = "Apache-2.0"
 repository = "https://github.com/spiraldb/coldfusion"
-description = "Parallel Parquet Iceberg table provider for DataFusion"
-keywords = ["iceberg", "datafusion", "parquet"]
+description = "Parallel Iceberg table provider for DataFusion with Parquet and Vortex readers"
+keywords = ["iceberg", "datafusion", "parquet", "vortex"]
 categories = ["database"]
 include = [
     "src/**",
@@ -41,7 +41,7 @@ include = [
 async-trait = "0.1.89"
 datafusion = { version = "=55.2.0", default-features = false, features = ["parquet"] }
 futures = "0.3"
-iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "04c96e42614ccf36f89fb3f699739eeb45e9838b", default-features = false }
+iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "278b205d05a87695be6f5d2bc5f76b09f4456256", default-features = false }
 parquet = "=59.3.2"
 tokio = { version = "1.47", default-features = false, features = ["rt-multi-thread", "sync"] }
 
@@ -49,6 +49,7 @@ tokio = { version = "1.47", default-features = false, features = ["rt-multi-thre
 datafusion = { version = "=55.2.0", default-features = false, features = ["sql"] }
 tempfile = "3.18"
 tokio = { version = "1.47", default-features = false, features = ["macros"] }
+vortex = { version = "=0.86.1", features = ["tokio"] }
 
 [lints.rust]
 unused_qualifications = "deny"

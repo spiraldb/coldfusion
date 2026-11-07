@@ -99,10 +99,14 @@ impl IcebergScan {
         let mut partition = 0;
         let mut partition_bytes = 0;
         for task in tasks {
-            if task.data_file_format() != iceberg::spec::DataFileFormat::Parquet {
-                return Err(DataFusionError::NotImplemented(
-                    "Iceberg DataFusion supports only Parquet data files".into(),
-                ));
+            if !matches!(
+                task.data_file_format(),
+                iceberg::spec::DataFileFormat::Parquet | iceberg::spec::DataFileFormat::Vortex
+            ) {
+                return Err(DataFusionError::NotImplemented(format!(
+                    "Iceberg DataFusion does not support {} data files",
+                    task.data_file_format(),
+                )));
             }
             let end = task.start().checked_add(task.length()).ok_or_else(|| {
                 DataFusionError::Plan("Iceberg task byte range overflows u64".into())

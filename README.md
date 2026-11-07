@@ -1,9 +1,9 @@
 # Coldfusion
 
 Coldfusion is a read-only Iceberg table provider for DataFusion 55.2. It reads
-Parquet through the native reader in `spiraldb/iceberg-rust` and exposes parallel
-scan streams. DataFusion is unmodified. The normal dependency graph excludes
-Vortex, and the provider rejects data files other than Parquet.
+Parquet and Vortex through the native readers in `spiraldb/iceberg-rust` and
+exposes parallel scan streams. A table may contain either format or a mixture
+of both. DataFusion is unmodified.
 
 ```toml
 [dependencies]
@@ -33,7 +33,8 @@ fn register(table: Table) -> Result<SessionContext> {
 ## Scan behavior
 
 Scans expose at least two output partitions, using the session target when
-larger. Each partition owns its reader stream and disjoint Parquet row groups.
+larger. Each partition owns its reader stream and disjoint Parquet row groups
+or Vortex row ranges.
 Small files can leave partitions empty. Keep the table's configured runtimes
 alive while queries execute. Its I/O runtime must be driven; entering its I/O
 context does not drive a current-thread runtime's reactor. Background decoding
@@ -48,9 +49,11 @@ to observe catalog changes. Reads use Iceberg's field-ID projection, schema
 evolution, defaults, and positional and equality delete handling. Output uses
 canonical Iceberg Arrow types, including `Utf8` and `LargeBinary`.
 
-Conservative primitive predicates prune manifests and Parquet row groups.
-DataFusion retains residual conditions. Live dynamic filters use cheap bounds,
-null checks, and short literal lists; expensive expressions remain residual.
+Conservative primitive predicates prune manifests and native file scans.
+DataFusion retains residual conditions. Parquet live dynamic filters use cheap
+bounds, null checks, and short literal lists; expensive expressions remain
+residual. Vortex uses the native static predicate path and DataFusion residuals;
+the Parquet-specific live row-filter hook does not run on Vortex files.
 The scan exposes output rows, compute time, bytes read, and dynamic pruning
 through DataFusion metrics. Byte statistics estimate projected Arrow output,
 independently of file compression.

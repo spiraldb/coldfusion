@@ -36,14 +36,5 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Test
         run: cargo test --locked --all-targets
-      - name: Check Parquet-only dependency graph
-        run: |
-          python3 - <<'PY'
-          import subprocess
-          tree = subprocess.check_output(
-              ["cargo", "tree", "--locked", "--edges", "normal"], text=True
-          )
-          assert "vortex" not in tree.lower(), tree
-          PY
       - name: Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
