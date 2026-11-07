@@ -8,8 +8,7 @@ of both. DataFusion is unmodified.
 The dependency direction is `ColdFusion → Iceberg + DataFusion`. This repository
 owns the provider, partition planning, and DataFusion expression adaptation. The
 Iceberg reader exposes format-neutral scan tasks and native reader hooks; it
-has no DataFusion dependency. An obsolete adapter prototype has been removed
-from the patched Iceberg workspace.
+has no DataFusion dependency.
 
 ```toml
 [dependencies]
@@ -76,7 +75,10 @@ independently of file compression.
 
 The dependency starts from `spiraldb/iceberg-rust` main at
 `ea48146de861ee71d32ba747ca0d182ea7746ed1` and is pinned in `Cargo.toml`.
-The [patch series](patches/iceberg-rust/) reproduces the patched fork tree.
+The [nine-patch series](patches/iceberg-rust/) contains only nonempty native
+changes. Its final Git tree is identical to the historical reader revision
+`930277e0` used by the recorded benchmarks. Cancelling experiments and obsolete
+adapter changes are omitted; the measured revision identities remain valid.
 It includes Parquet split ownership, promoted-literal and page-bound fixes,
 runtime and cancellation support, and the per-file row-filter extension used by
 this crate.
