@@ -33,7 +33,7 @@ use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
 use datafusion::physical_plan::ExecutionPlan;
 /// Iceberg APIs from the revision used by this provider.
 pub use iceberg;
-use iceberg::arrow::schema_to_arrow_schema;
+use iceberg::arrow::{schema_to_arrow_schema, schema_with_view_types};
 use iceberg::table::Table;
 
 /// Exposes an immutable Iceberg snapshot as parallel Parquet and Vortex scans.
@@ -43,6 +43,8 @@ use iceberg::table::Table;
 pub struct IcebergTableProvider {
     table: Table,
     schema: SchemaRef,
+    view_types: bool,
+    vortex_layout_splits: bool,
     exact_filter_pushdown: bool,
     exact_filter_columns: HashSet<String>,
 }
@@ -50,6 +52,14 @@ pub struct IcebergTableProvider {
 impl IcebergTableProvider {
     /// Creates a provider for the current schema and snapshot of `table`.
     pub fn try_new(table: Table) -> Result<Self> {
+        Self::try_new_with_view_types(table, false)
+    }
+
+    /// Creates a provider with optional top-level string and binary view arrays.
+    ///
+    /// Nested fields retain their canonical Iceberg Arrow types. Every scan uses
+    /// the selected output types for both Parquet and Vortex data files.
+    pub fn try_new_with_view_types(table: Table, view_types: bool) -> Result<Self> {
         // Required fields without initial defaults must be physically present in
         // valid Iceberg files. Check history by ID so renames retain eligibility.
         let exact_filter_columns = if table
@@ -78,14 +88,26 @@ impl IcebergTableProvider {
         } else {
             HashSet::new()
         };
-        let schema =
-            Arc::new(schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?);
+        let schema = schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?;
+        let schema = Arc::new(if view_types {
+            schema_with_view_types(&schema)
+        } else {
+            schema
+        });
         Ok(Self {
             table,
             schema,
+            view_types,
+            vortex_layout_splits: false,
             exact_filter_pushdown: false,
             exact_filter_columns,
         })
+    }
+
+    /// Filters Vortex layout batches before slicing the Arrow output batches.
+    pub fn with_vortex_layout_splits(mut self, enabled: bool) -> Self {
+        self.vortex_layout_splits = enabled;
+        self
     }
 
     /// Removes residuals for supported predicates on required fields without defaults.
@@ -142,15 +164,19 @@ impl TableProvider for IcebergTableProvider {
         )
         .await
         .map_err(external)?;
-        Ok(Arc::new(scan::IcebergScan::try_new(
-            self.table.clone(),
-            schema,
-            tasks,
-            state.config().target_partitions(),
-            state.config().batch_size(),
-            !filters.is_empty(),
-            state.config_options().execution.parquet.enable_page_index,
-        )?))
+        Ok(Arc::new(
+            scan::IcebergScan::try_new(
+                self.table.clone(),
+                schema,
+                tasks,
+                state.config().target_partitions(),
+                state.config().batch_size(),
+                !filters.is_empty(),
+                state.config_options().execution.parquet.enable_page_index,
+            )?
+            .with_view_types(self.view_types)
+            .with_vortex_layout_splits(self.vortex_layout_splits),
+        ))
     }
 
     fn supports_filters_pushdown(

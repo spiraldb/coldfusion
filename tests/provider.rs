@@ -44,7 +44,9 @@ use datafusion::physical_plan::{
 use datafusion::prelude::{SessionConfig, SessionContext, col, lit};
 use datafusion::scalar::ScalarValue;
 use futures::{StreamExt, TryStreamExt};
-use iceberg::arrow::{arrow_schema_to_schema_auto_assign_ids, schema_to_arrow_schema};
+use iceberg::arrow::{
+    arrow_schema_to_schema_auto_assign_ids, schema_to_arrow_schema, schema_with_view_types,
+};
 use iceberg::io::LocalFsStorageFactory;
 use iceberg::memory::{MEMORY_CATALOG_WAREHOUSE, MemoryCatalogBuilder};
 use iceberg::metadata_columns::{
@@ -1631,7 +1633,6 @@ async fn unsupported_data_formats_are_rejected_before_opening_files() {
     assert!(!path.exists());
 }
 
-
 async fn exact_filter_fixture(format: DataFileFormat) -> Fixture {
     use datafusion::arrow::array::{Date32Array, Decimal128Array};
 
@@ -1691,7 +1692,6 @@ async fn exact_filter_fixture(format: DataFileFormat) -> Fixture {
     fixture.write_batch(&path, format, &batch).await;
     fixture
 }
-
 
 #[tokio::test]
 async fn exact_filters_enforce_required_decimal_date_predicates_without_residuals() {
@@ -1849,7 +1849,6 @@ async fn exact_filters_enforce_required_decimal_date_predicates_without_residual
     }
 }
 
-
 #[tokio::test]
 async fn historical_partition_specs_keep_exact_filters_residual() {
     use datafusion::logical_expr::TableProviderFilterPushDown;
@@ -1919,4 +1918,95 @@ async fn historical_partition_specs_keep_exact_filters_residual() {
             .as_slice(),
         [TableProviderFilterPushDown::Inexact]
     ));
+}
+
+#[tokio::test]
+async fn view_types_preserve_schema_across_formats_renames_and_deletes() {
+    for (first, second) in [
+        (DataFileFormat::Parquet, None),
+        (DataFileFormat::Vortex, None),
+        (DataFileFormat::Parquet, Some(DataFileFormat::Vortex)),
+        (DataFileFormat::Vortex, Some(DataFileFormat::Parquet)),
+    ] {
+        let mut fixture = Fixture::new_with_format(true, first).await;
+        let mut reference = Vec::new();
+        if let Some(second) = second {
+            let mut columns = fixture.batch.columns().to_vec();
+            columns[0] = Arc::new(Int64Array::from_iter_values(ROWS..ROWS * 2));
+            let extra = RecordBatch::try_new(fixture.batch.schema(), columns).unwrap();
+            let path = format!("{}/extra.{second}", fixture.table.metadata().location());
+            fixture.write_batch(&path, second, &extra).await;
+            reference.push(extra);
+        }
+        fixture.add_deletes().await;
+        fixture.evolve_field(1, |field| field.name = "renamed_label".to_owned());
+        let removed = [0, 31, 32, 97, 128, 255, 256];
+        let mask = BooleanArray::from_iter((0..ROWS).map(|id| Some(!removed.contains(&id))));
+        reference
+            .push(datafusion::arrow::compute::filter_record_batch(&fixture.batch, &mask).unwrap());
+        let provider = Arc::new(
+            IcebergTableProvider::try_new_with_view_types(fixture.table.clone(), true).unwrap(),
+        );
+        let canonical = schema_to_arrow_schema(fixture.table.metadata().current_schema()).unwrap();
+        let expected_schema = Arc::new(schema_with_view_types(&canonical));
+        assert_eq!(provider.schema(), expected_schema);
+        assert_eq!(expected_schema.field(1).data_type(), &DataType::Utf8View);
+        assert_eq!(expected_schema.field(5).data_type(), &DataType::BinaryView);
+        assert_eq!(expected_schema.field(3), canonical.field(3));
+
+        let context = fixture.context();
+        let projection = vec![1, 5, 3];
+        let plan = provider
+            .scan(
+                &context.state(),
+                Some(&projection),
+                &[col("id").gt_eq(lit(64_i64))],
+                None,
+            )
+            .await
+            .unwrap();
+        let projected_schema = Arc::new(expected_schema.project(&projection).unwrap());
+        assert_eq!(plan.schema(), projected_schema);
+        assert_eq!(plan.output_partitioning().partition_count(), 4);
+        let partitions = collect_partitioned(plan, context.task_ctx()).await.unwrap();
+        assert!(
+            partitions
+                .iter()
+                .filter(|batches| !batches.is_empty())
+                .count()
+                > 1
+        );
+        for batch in partitions.into_iter().flatten() {
+            assert_eq!(batch.schema(), projected_schema);
+        }
+
+        context.register_table("ice", provider).unwrap();
+        context
+            .register_table(
+                "reference",
+                Arc::new(MemTable::try_new(fixture.batch.schema(), vec![reference]).unwrap()),
+            )
+            .unwrap();
+        let actual = context
+            .sql(
+                "SELECT id, renamed_label AS label, blob, payload FROM ice \
+                 WHERE id >= 64 AND (renamed_label LIKE 'row-%' OR renamed_label IS NULL) ORDER BY id",
+            )
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+        let expected = context
+            .sql("SELECT id, label, blob, payload FROM reference WHERE id >= 64 ORDER BY id")
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+        assert_eq!(
+            pretty_format_batches(&actual).unwrap().to_string(),
+            pretty_format_batches(&expected).unwrap().to_string()
+        );
+    }
 }
