@@ -20,9 +20,10 @@
 mod predicate;
 mod scan;
 mod statistics;
+mod vortex_scan;
 
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
@@ -33,7 +34,7 @@ use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
 use datafusion::physical_plan::ExecutionPlan;
 /// Iceberg APIs from the revision used by this provider.
 pub use iceberg;
-use iceberg::arrow::{schema_to_arrow_schema, schema_with_view_types};
+use iceberg::arrow::{VortexScanCache, schema_to_arrow_schema, schema_with_view_types};
 use iceberg::table::Table;
 
 /// Exposes an immutable Iceberg snapshot as parallel Parquet and Vortex scans.
@@ -45,6 +46,8 @@ pub struct IcebergTableProvider {
     schema: SchemaRef,
     view_types: bool,
     vortex_layout_splits: bool,
+    native_vortex_scan: bool,
+    native_vortex_cache: OnceLock<VortexScanCache>,
     exact_filter_pushdown: bool,
     exact_filter_columns: HashSet<String>,
 }
@@ -99,6 +102,8 @@ impl IcebergTableProvider {
             schema,
             view_types,
             vortex_layout_splits: false,
+            native_vortex_scan: false,
+            native_vortex_cache: OnceLock::new(),
             exact_filter_pushdown: false,
             exact_filter_columns,
         })
@@ -107,6 +112,16 @@ impl IcebergTableProvider {
     /// Filters Vortex layout batches before slicing the Arrow output batches.
     pub fn with_vortex_layout_splits(mut self, enabled: bool) -> Self {
         self.vortex_layout_splits = enabled;
+        self
+    }
+
+    /// Uses Vortex's native expression scan interface for supported Iceberg tasks.
+    ///
+    /// Unsupported schemas, deletes and partition specifications use the Arrow reader.
+    /// Native scans expose Vortex execution metrics; the Arrow reader's per-partition
+    /// `bytes_scanned` metric is unavailable because cached IO is shared across scans.
+    pub fn with_native_vortex_scan(mut self, enabled: bool) -> Self {
+        self.native_vortex_scan = enabled;
         self
     }
 
@@ -164,6 +179,19 @@ impl TableProvider for IcebergTableProvider {
         )
         .await
         .map_err(external)?;
+        if self.native_vortex_scan
+            && let Some(plan) = vortex_scan::try_scan(
+                &self.table,
+                self.schema.clone(),
+                &tasks,
+                projection,
+                state,
+                &self.native_vortex_cache,
+            )
+            .await?
+        {
+            return Ok(plan);
+        }
         Ok(Arc::new(
             scan::IcebergScan::try_new(
                 self.table.clone(),

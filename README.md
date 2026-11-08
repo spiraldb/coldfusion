@@ -67,8 +67,11 @@ skip SQL `CASE` evaluation required by the query. Vortex uses the native static
 predicate path and DataFusion residuals; the Parquet-specific live row-filter
 hook does not run on Vortex files. Live filters evaluate decoded Arrow batches;
 they do not currently turn arbitrary `CASE` expressions into metadata pruning.
-The scan exposes output rows, compute time, bytes read, and dynamic pruning
-through DataFusion metrics. Byte statistics estimate projected Arrow output,
+The Arrow-reader scan exposes output rows, compute time, bytes read, and dynamic
+pruning through DataFusion metrics. Native Vortex scans expose the official
+Vortex execution metrics, but do not report per-query or per-partition
+`bytes_scanned`: file handles and their IO counters are shared across scans.
+Byte statistics estimate projected Arrow output,
 independently of file compression.
 
 ## Iceberg patches

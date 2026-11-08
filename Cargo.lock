@@ -907,6 +907,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "vortex",
+ "vortex-datafusion",
 ]
 
 [[package]]
@@ -4462,18 +4463,18 @@ dependencies = [
 
 [[package]]
 name = "toml_datetime"
-version = "1.1.3+spec-1.1.0"
+version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "173f25c883cd2176a2d8212155638c0a60d484a9d84546d270866f40f56b6e49"
+checksum = "2b86d767906c6c42421dcba507eb9d203e779497710a47782a224bb871653053"
 dependencies = [
  "serde_core",
 ]
 
 [[package]]
 name = "toml_edit"
-version = "0.25.19+spec-1.1.0"
+version = "0.25.17+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd43688c4858d7264ae1cf9a9f874a67c3feb74a883b1cd7bebd6a4ea8307218"
+checksum = "e3641d5bbb5349a79e1020a242d251efbc546ad8048d133958323ce9c40a9c9c"
 dependencies = [
  "indexmap 2.14.2",
  "toml_datetime",
@@ -4930,6 +4931,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "vortex-datafusion"
+version = "0.1.0"
+source = "git+https://github.com/vortex-data/vortex.git?rev=7d003295d19d3ba14cbf22e3cc556f656851c2a4#7d003295d19d3ba14cbf22e3cc556f656851c2a4"
+dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "datafusion-catalog",
+ "datafusion-common",
+ "datafusion-common-runtime",
+ "datafusion-datasource",
+ "datafusion-execution",
+ "datafusion-expr",
+ "datafusion-functions",
+ "datafusion-functions-nested",
+ "datafusion-physical-expr",
+ "datafusion-physical-expr-adapter",
+ "datafusion-physical-expr-common",
+ "datafusion-physical-plan",
+ "datafusion-pruning",
+ "futures",
+ "itertools 0.14.0",
+ "object_store",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "vortex",
+ "vortex-arrow",
+ "vortex-utils",
+]
+
+[[package]]
 name = "vortex-datetime-parts"
 version = "0.1.0"
 source = "git+https://github.com/vortex-data/vortex.git?rev=7d003295d19d3ba14cbf22e3cc556f656851c2a4#7d003295d19d3ba14cbf22e3cc556f656851c2a4"
@@ -4976,6 +5009,7 @@ dependencies = [
  "arrow-schema",
  "flatbuffers",
  "jiff",
+ "object_store",
  "prost",
  "tokio",
 ]
@@ -5026,6 +5060,7 @@ dependencies = [
  "futures",
  "itertools 0.14.0",
  "moka",
+ "object_store",
  "parking_lot",
  "pin-project-lite",
  "prost",
@@ -5090,6 +5125,7 @@ dependencies = [
  "custom-labels",
  "futures",
  "glob",
+ "object_store",
  "parking_lot",
  "pin-project-lite",
  "smol",
@@ -5627,9 +5663,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winnow"
-version = "1.0.5"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
+checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
 ]

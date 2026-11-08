@@ -44,12 +44,13 @@ futures = "0.3"
 iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315", default-features = false }
 parquet = "=59.3.2"
 tokio = { version = "1.47", default-features = false, features = ["rt-multi-thread", "sync"] }
+vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "7d003295d19d3ba14cbf22e3cc556f656851c2a4", features = ["tokio"] }
+vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "7d003295d19d3ba14cbf22e3cc556f656851c2a4", default-features = false }
 
 [dev-dependencies]
 datafusion = { version = "=55.2.0", default-features = false, features = ["sql"] }
 tempfile = "3.18"
 tokio = { version = "1.47", default-features = false, features = ["macros"] }
-vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "7d003295d19d3ba14cbf22e3cc556f656851c2a4", features = ["tokio"] }
 
 [lints.rust]
 unused_qualifications = "deny"

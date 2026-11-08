@@ -29,6 +29,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
 use datafusion::catalog::TableProvider;
 use datafusion::common::DataFusionError;
+use datafusion::common::stats::Precision;
 use datafusion::datasource::MemTable;
 use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::PhysicalExpr;
@@ -38,6 +39,7 @@ use datafusion::physical_expr::expressions::{
 use datafusion::physical_plan::filter_pushdown::{
     ChildFilterPushdownResult, ChildPushdownResult, FilterPushdownPhase, PushedDown,
 };
+use datafusion::physical_plan::statistics::StatisticsArgs;
 use datafusion::physical_plan::{
     ExecutionPlanProperties, collect, collect_partitioned, displayable,
 };
@@ -1633,6 +1635,499 @@ async fn unsupported_data_formats_are_rejected_before_opening_files() {
     assert!(!path.exists());
 }
 
+async fn flat_vortex_fixture() -> Fixture {
+    let mut fixture = Fixture::new(false).await;
+    let projected = fixture.batch.schema().project(&[0, 1, 4]).unwrap();
+    let schema = arrow_schema_to_schema_auto_assign_ids(&projected).unwrap();
+    let table = fixture
+        .catalog
+        .create_table(
+            &NamespaceIdent::new("test".to_owned()),
+            TableCreation::builder()
+                .name("flat".to_owned())
+                .schema(schema)
+                .build(),
+        )
+        .await
+        .unwrap();
+    let arrow_schema = Arc::new(schema_to_arrow_schema(table.metadata().current_schema()).unwrap());
+    fixture.batch = RecordBatch::try_new(arrow_schema, vec![
+        fixture.batch.column(0).clone(),
+        fixture.batch.column(1).clone(),
+        Arc::new(Float64Array::from_iter((0..ROWS).map(|id| match id % 8 {
+            0 => None,
+            1 => Some(f64::NAN),
+            2 => Some(f64::INFINITY),
+            3 => Some(f64::NEG_INFINITY),
+            4 => Some(-0.0),
+            5 => Some(0.0),
+            6 => Some(-1.0),
+            _ => Some(1.0),
+        }))),
+    ])
+    .unwrap();
+    fixture.data_path = format!("{}/flat.vortex", table.metadata().location());
+    fixture.table = table;
+    let path = fixture.data_path.clone();
+    let batch = fixture.batch.clone();
+    fixture
+        .write_batch(&path, DataFileFormat::Vortex, &batch)
+        .await;
+    fixture
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_vortex_scans_preserve_parallel_queries_and_evolution() {
+    let mut fixture = flat_vortex_fixture().await;
+    let tx = Transaction::new(&fixture.table);
+    fixture.table = tx
+        .update_schema()
+        .add_column(AddColumn::optional("missing", PrimitiveType::String.into()))
+        .apply(tx)
+        .unwrap()
+        .commit(&fixture.catalog)
+        .await
+        .unwrap();
+    fixture.evolve_field(1, |field| field.name = "renamed_label".to_owned());
+    let schema =
+        Arc::new(schema_to_arrow_schema(fixture.table.metadata().current_schema()).unwrap());
+    let mut columns = fixture.batch.columns().to_vec();
+    columns.push(Arc::new(StringArray::from(vec![
+        None::<&str>;
+        ROWS as usize
+    ])));
+    let reference = RecordBatch::try_new(schema.clone(), columns).unwrap();
+
+    for views in [false, true] {
+        let context = fixture.context();
+        let provider = Arc::new(
+            IcebergTableProvider::try_new_with_view_types(fixture.table.clone(), views)
+                .unwrap()
+                .with_native_vortex_scan(true)
+                .with_exact_filter_pushdown(true),
+        );
+        for projection in [vec![], vec![0]] {
+            let projected = provider
+                .scan(&context.state(), Some(&projection), &[], None)
+                .await
+                .unwrap();
+            let statistics = projected
+                .statistics_from_inputs(&[], &StatisticsArgs::new())
+                .unwrap();
+            assert_eq!(statistics.total_byte_size, Precision::Absent);
+        }
+        let plan = provider
+            .scan(&context.state(), None, &[], None)
+            .await
+            .unwrap();
+        let display = displayable(plan.as_ref()).indent(true).to_string();
+        assert!(display.contains("VortexScanSource"), "{display}");
+        assert!(!display.contains("IcebergScan:"), "{display}");
+        assert_eq!(plan.output_partitioning().partition_count(), 4);
+        let partitions = collect_partitioned(plan, context.task_ctx()).await.unwrap();
+        assert!(
+            partitions
+                .iter()
+                .filter(|batches| batches.iter().any(|batch| batch.num_rows() > 0))
+                .count()
+                >= 4
+        );
+        assert_eq!(
+            partitions
+                .iter()
+                .flatten()
+                .map(RecordBatch::num_rows)
+                .sum::<usize>(),
+            ROWS as usize
+        );
+        assert!(
+            partitions
+                .iter()
+                .flatten()
+                .all(|batch| batch.schema() == provider.schema())
+        );
+        context.register_table("ice", provider).unwrap();
+        context
+            .register_table(
+                "reference",
+                Arc::new(MemTable::try_new(schema.clone(), vec![vec![reference.clone()]]).unwrap()),
+            )
+            .unwrap();
+        for query in [
+            "SELECT id, special_float * 2.0 AS doubled, special_float + 1.0 AS shifted FROM {} ORDER BY id",
+            "SELECT id, special_float / 0.0 AS divided FROM {} ORDER BY id",
+            "SELECT id, 1.0 / (special_float + 0.0) AS inverse FROM {} ORDER BY id",
+            "SELECT id, special_float * 0.0 AS zero_product FROM {} ORDER BY id",
+            "SELECT id, renamed_label, missing FROM {} WHERE id >= 17 AND id < 240 AND (renamed_label LIKE 'row-1%' OR renamed_label IS NULL) ORDER BY id",
+            "SELECT id, special_float FROM {} WHERE special_float >= 0.0 OR special_float IS NULL ORDER BY id",
+            "SELECT id FROM {} WHERE special_float = CAST('NaN' AS DOUBLE) ORDER BY id",
+            "SELECT id, id + 9223372036854775807 AS wrapped FROM {} ORDER BY id",
+            "SELECT id, renamed_label FROM {} WHERE id >= 11 ORDER BY id LIMIT 17",
+            "SELECT id, missing FROM {} WHERE missing IS NULL ORDER BY id",
+        ] {
+            let plan = context
+                .sql(&query.replace("{}", "ice"))
+                .await
+                .unwrap()
+                .create_physical_plan()
+                .await
+                .unwrap();
+            let display = displayable(plan.as_ref()).indent(true).to_string();
+            assert!(display.contains("VortexScanSource"), "{display}");
+            if query.contains(" AS divided ") {
+                assert!(
+                    display
+                        .lines()
+                        .any(|line| line.contains("VortexScanSource") && line.contains("divided")),
+                    "{display}"
+                );
+            }
+            if query.contains("9223372036854775807") {
+                assert!(
+                    display
+                        .lines()
+                        .filter(|line| line.contains("VortexScanSource"))
+                        .all(|line| { !line.contains("9223372036854775807") }),
+                    "{display}"
+                );
+            }
+            let actual = collect(plan, context.task_ctx()).await.unwrap();
+            let expected = context
+                .sql(&query.replace("{}", "reference"))
+                .await
+                .unwrap()
+                .collect()
+                .await
+                .unwrap();
+            assert_eq!(
+                pretty_format_batches(&actual).unwrap().to_string(),
+                pretty_format_batches(&expected).unwrap().to_string(),
+                "{query}, views={views}"
+            );
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_vortex_decimal_arithmetic_matches_datafusion_at_precision_bounds() {
+    use datafusion::arrow::array::Decimal128Array;
+
+    let mut fixture = Fixture::new(false).await;
+    let schema = arrow_schema_to_schema_auto_assign_ids(&Schema::new(vec![
+        Field::new("id", DataType::Int64, false),
+        Field::new("a", DataType::Decimal128(18, 2), true),
+        Field::new("b", DataType::Decimal128(18, 2), true),
+    ]))
+    .unwrap();
+    let table = fixture
+        .catalog
+        .create_table(
+            &NamespaceIdent::new("test".to_owned()),
+            TableCreation::builder()
+                .name("decimal_arithmetic".to_owned())
+                .schema(schema)
+                .build(),
+        )
+        .await
+        .unwrap();
+    let maximum = 10_i128.pow(18) - 1;
+    let decimals = |values: &[Option<i128>]| -> ArrayRef {
+        let values =
+            Decimal128Array::from_iter((0..ROWS as usize).map(|row| values[row % values.len()]))
+                .with_precision_and_scale(18, 2)
+                .unwrap();
+        values.validate_decimal_precision(18).unwrap();
+        Arc::new(values)
+    };
+    fixture.batch = RecordBatch::try_new(
+        Arc::new(schema_to_arrow_schema(table.metadata().current_schema()).unwrap()),
+        vec![
+            Arc::new(Int64Array::from_iter_values(0..ROWS)),
+            decimals(&[
+                Some(maximum),
+                Some(-maximum),
+                Some(0),
+                None,
+                Some(maximum),
+                Some(-maximum),
+                Some(1),
+                Some(-1),
+            ]),
+            decimals(&[
+                Some(maximum),
+                Some(-maximum),
+                Some(maximum),
+                Some(0),
+                Some(-maximum),
+                Some(maximum),
+                None,
+                Some(0),
+            ]),
+        ],
+    )
+    .unwrap();
+    fixture.data_path = format!("{}/decimal.vortex", table.metadata().location());
+    fixture.table = table;
+    let path = fixture.data_path.clone();
+    let batch = fixture.batch.clone();
+    fixture
+        .write_batch(&path, DataFileFormat::Vortex, &batch)
+        .await;
+
+    let context = fixture.context();
+    context
+        .register_table(
+            "ice",
+            Arc::new(
+                IcebergTableProvider::try_new(fixture.table.clone())
+                    .unwrap()
+                    .with_native_vortex_scan(true),
+            ),
+        )
+        .unwrap();
+    context
+        .register_table(
+            "reference",
+            Arc::new(MemTable::try_new(batch.schema(), vec![vec![batch]]).unwrap()),
+        )
+        .unwrap();
+    let query =
+        "SELECT id, a + b AS added, a - b AS subtracted, a * b AS multiplied FROM {} ORDER BY id";
+    let plan = context
+        .sql(&query.replace("{}", "ice"))
+        .await
+        .unwrap()
+        .create_physical_plan()
+        .await
+        .unwrap();
+    let display = displayable(plan.as_ref()).indent(true).to_string();
+    assert!(
+        display.lines().any(|line| line.contains("VortexScanSource")
+            && ["added", "subtracted", "multiplied"]
+                .iter()
+                .all(|name| line.contains(name))),
+        "decimal arithmetic must be computed in the native scan: {display}"
+    );
+    let actual = collect(plan, context.task_ctx()).await.unwrap();
+    let expected = context
+        .sql(&query.replace("{}", "reference"))
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    let expected_schema = expected[0].schema();
+    assert_eq!(
+        expected_schema.field(1).data_type(),
+        &DataType::Decimal128(19, 2)
+    );
+    assert_eq!(
+        expected_schema.field(2).data_type(),
+        &DataType::Decimal128(19, 2)
+    );
+    assert_eq!(
+        expected_schema.field(3).data_type(),
+        &DataType::Decimal128(37, 4)
+    );
+    assert!(actual.iter().all(|batch| batch.schema() == expected_schema));
+    assert_eq!(
+        actual.iter().map(RecordBatch::num_rows).sum::<usize>(),
+        ROWS as usize
+    );
+    assert_eq!(
+        pretty_format_batches(&actual).unwrap().to_string(),
+        pretty_format_batches(&expected).unwrap().to_string(),
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_vortex_source_combines_selection_ranges_and_limits() {
+    use std::num::NonZeroUsize;
+
+    use datafusion::arrow::array::AsArray;
+    use iceberg::arrow::VortexScanSource;
+    use vortex::array::VortexSessionExecute;
+    use vortex::arrow::ArrowSessionExt;
+    use vortex::expr::{get_item, gt, lit, root, select};
+    use vortex::scan::selection::Selection;
+    use vortex::scan::{DataSource, ScanRequest};
+
+    async fn read_ids(
+        source: &VortexScanSource,
+        session: &VortexSession,
+        request: ScanRequest,
+        concurrent: bool,
+    ) -> Vec<i64> {
+        let scan = source.scan(request).await.unwrap();
+        let field = session.arrow().to_arrow_field("", scan.dtype()).unwrap();
+        let partitions = scan.partitions().try_collect::<Vec<_>>().await.unwrap();
+        let readers = futures::stream::iter(partitions)
+            .map(|partition| async move { partition.execute()?.try_collect::<Vec<_>>().await });
+        let arrays: Vec<Vec<vortex::array::ArrayRef>> = if concurrent {
+            readers.buffer_unordered(4).try_collect().await.unwrap()
+        } else {
+            readers.buffered(1).try_collect().await.unwrap()
+        };
+        let mut context = session.create_execution_ctx();
+        let mut rows = Vec::new();
+        for array in arrays.into_iter().flatten() {
+            let arrow = session
+                .arrow()
+                .execute_arrow(array, Some(&field), &mut context)
+                .unwrap();
+            let batch = RecordBatch::from(arrow.as_struct());
+            rows.extend(
+                batch
+                    .column(0)
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .values()
+                    .iter()
+                    .copied(),
+            );
+        }
+        rows
+    }
+
+    let fixture = flat_vortex_fixture().await;
+    let tasks = fixture
+        .table
+        .scan()
+        .build()
+        .unwrap()
+        .plan_files()
+        .await
+        .unwrap()
+        .try_collect::<Vec<_>>()
+        .await
+        .unwrap();
+    let session = VortexSession::default();
+    let source = VortexScanSource::try_new(
+        fixture.table.file_io().clone(),
+        fixture.table.metadata().current_schema().clone(),
+        tasks,
+        session.clone(),
+        NonZeroUsize::new(4).unwrap(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let request = ScanRequest {
+        projection: select(["id"], root()),
+        filter: Some(gt(get_item("id", root()), lit(70_i64))),
+        row_range: Some(2..9),
+        selection: Selection::IncludeRoaring([3, 5, 8, 40].into_iter().collect()),
+        partition_selection: Selection::IncludeRoaring([2, 4, 5].into_iter().collect()),
+        partition_range: Some(1..7),
+        ..Default::default()
+    };
+    let expected = vec![71, 74, 135, 137, 140, 168, 170, 173];
+    let mut actual = read_ids(&source, &session, request.clone(), true).await;
+    actual.sort_unstable();
+    assert_eq!(actual, expected);
+    for limit in [0, 4] {
+        let mut actual = read_ids(
+            &source,
+            &session,
+            ScanRequest {
+                limit: Some(limit),
+                ..request.clone()
+            },
+            true,
+        )
+        .await;
+        actual.sort_unstable();
+        assert_eq!(actual.len(), limit as usize);
+        assert!(actual.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(actual.iter().all(|id| expected.contains(id)));
+    }
+    let ordered = read_ids(
+        &source,
+        &session,
+        ScanRequest {
+            ordered: true,
+            limit: Some(2),
+            ..request
+        },
+        false,
+    )
+    .await;
+    assert_eq!(ordered, vec![71, 74, 135, 137, 168, 170]);
+}
+
+#[tokio::test]
+async fn native_vortex_scans_fall_back_for_nested_deletes_and_mixed_files() {
+    for scenario in ["nested", "deletes", "mixed"] {
+        let mut fixture = if scenario == "nested" {
+            Fixture::new_with_format(true, DataFileFormat::Vortex).await
+        } else {
+            flat_vortex_fixture().await
+        };
+        let mut reference = vec![fixture.batch.clone()];
+        if scenario == "mixed" {
+            let mut columns = fixture.batch.columns().to_vec();
+            columns[0] = Arc::new(Int64Array::from_iter_values(ROWS..ROWS * 2));
+            let extra = RecordBatch::try_new(fixture.batch.schema(), columns).unwrap();
+            let path = format!("{}/extra.parquet", fixture.table.metadata().location());
+            fixture
+                .write_batch(&path, DataFileFormat::Parquet, &extra)
+                .await;
+            reference.push(extra);
+        }
+        if scenario != "nested" {
+            fixture.add_deletes().await;
+            let removed = [0, 31, 32, 97, 128, 255, 256];
+            let mask = BooleanArray::from_iter((0..ROWS).map(|id| Some(!removed.contains(&id))));
+            reference[0] =
+                datafusion::arrow::compute::filter_record_batch(&fixture.batch, &mask).unwrap();
+        }
+        for views in [false, true] {
+            let context = fixture.context();
+            let provider = Arc::new(
+                IcebergTableProvider::try_new_with_view_types(fixture.table.clone(), views)
+                    .unwrap()
+                    .with_native_vortex_scan(true),
+            );
+            let plan = provider
+                .scan(&context.state(), None, &[], None)
+                .await
+                .unwrap();
+            let display = displayable(plan.as_ref()).indent(true).to_string();
+            assert!(display.contains("IcebergScan:"), "{scenario}: {display}");
+            assert!(
+                !display.contains("VortexScanSource"),
+                "{scenario}: {display}"
+            );
+            assert_eq!(plan.output_partitioning().partition_count(), 4);
+            context.register_table("ice", provider).unwrap();
+            context
+                .register_table(
+                    "reference",
+                    Arc::new(
+                        MemTable::try_new(fixture.batch.schema(), vec![reference.clone()]).unwrap(),
+                    ),
+                )
+                .unwrap();
+            let mut results = Vec::new();
+            for name in ["ice", "reference"] {
+                let batches = context
+                    .sql(&format!(
+                        "SELECT id, label, special_float FROM {name} \
+                         WHERE id >= 17 AND (label LIKE 'row-1%' OR label IS NULL) ORDER BY id"
+                    ))
+                    .await
+                    .unwrap()
+                    .collect()
+                    .await
+                    .unwrap();
+                results.push(pretty_format_batches(&batches).unwrap().to_string());
+            }
+            assert_eq!(results[0], results[1], "{scenario}, views={views}");
+        }
+    }
+}
+
 async fn exact_filter_fixture(format: DataFileFormat) -> Fixture {
     use datafusion::arrow::array::{Date32Array, Decimal128Array};
 
@@ -2009,4 +2504,91 @@ async fn view_types_preserve_schema_across_formats_renames_and_deletes() {
             pretty_format_batches(&expected).unwrap().to_string()
         );
     }
+}
+
+#[test]
+fn native_vortex_plan_executes_after_planning_runtime_stops() {
+    let io_runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+    let (fixture, provider) = io_runtime.block_on(async {
+        let fixture = flat_vortex_fixture().await;
+        let provider = Arc::new(
+            IcebergTableProvider::try_new(fixture.table.clone())
+                .unwrap()
+                .with_native_vortex_scan(true)
+                .with_exact_filter_pushdown(true),
+        );
+        (fixture, provider)
+    });
+    let planning_runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (plan, task_context) = planning_runtime.block_on(async {
+        let context = fixture.context();
+        context.register_table("ice", provider.clone()).unwrap();
+        let plan = context
+            .sql("SELECT id FROM ice WHERE id BETWEEN 17 AND 142 ORDER BY id")
+            .await
+            .unwrap()
+            .create_physical_plan()
+            .await
+            .unwrap();
+        let display = displayable(plan.as_ref()).indent(true).to_string();
+        assert!(display.contains("VortexScanSource"), "{display}");
+        (plan, context.task_ctx())
+    });
+    drop(planning_runtime);
+    let execution_runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+    execution_runtime.block_on(async {
+        let batches = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            collect(plan, task_context),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let ids = |batches: &[RecordBatch]| {
+            batches
+                .iter()
+                .flat_map(|batch| {
+                    batch
+                        .column(0)
+                        .as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .values()
+                        .to_vec()
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&batches), (17..=142).collect::<Vec<_>>());
+
+        let context = fixture.context();
+        context.register_table("ice", provider.clone()).unwrap();
+        let plan = context
+            .sql("SELECT id FROM ice WHERE id BETWEEN 17 AND 142 ORDER BY id")
+            .await
+            .unwrap()
+            .create_physical_plan()
+            .await
+            .unwrap();
+        let display = displayable(plan.as_ref()).indent(true).to_string();
+        assert!(display.contains("VortexScanSource"), "{display}");
+        let batches = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            collect(plan, context.task_ctx()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(ids(&batches), (17..=142).collect::<Vec<_>>());
+    });
 }
