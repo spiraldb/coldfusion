@@ -1,0 +1,509 @@
+From 3a409b3130cbe1fa945a6a00bd5c1ae86da0c315 Mon Sep 17 00:00:00 2001
+From: Daniel King <dan@spiraldb.com>
+Date: Sun, 8 Nov 2026 02:49:38 -0500
+Subject: [PATCH 13/13] Reuse opened Vortex files on the table IO runtime
+
+Bound metadata handle reuse to 128 immutable files and coalesce concurrent opens. Keep predicates and schema adaptation query-local, count cache IO cumulatively, and leave expression/pruning reader state scoped to each scan. Anchor persistent file drivers to the configured IO runtime so plans can move between runtimes.
+---
+ crates/iceberg/public-api.txt                 |  11 ++
+ crates/iceberg/src/arrow/mod.rs               |   2 +-
+ .../iceberg/src/arrow/reader/vortex/source.rs | 177 ++++++++++++++----
+ .../src/arrow/reader/vortex/source/cache.rs   | 121 ++++++++++++
+ crates/iceberg/src/table.rs                   |   6 +-
+ 5 files changed, 280 insertions(+), 37 deletions(-)
+ create mode 100644 crates/iceberg/src/arrow/reader/vortex/source/cache.rs
+
+diff --git a/crates/iceberg/public-api.txt b/crates/iceberg/public-api.txt
+index 267644bf3df72fd1c1e086cd6f186a35b1ec49ff..847d1bcf2d8d9f93b8208939227704ef0ff2f60e 100644
+--- a/crates/iceberg/public-api.txt
++++ b/crates/iceberg/public-api.txt
+@@ -110,10 +110,20 @@ pub struct iceberg::arrow::ScanResult
+ impl iceberg::scan::ScanResult
+ pub fn iceberg::scan::ScanResult::metrics(&self) -> &iceberg::scan::ScanMetrics
+ pub fn iceberg::scan::ScanResult::stream(self) -> iceberg::scan::ArrowRecordBatchStream
++pub struct iceberg::arrow::VortexScanCache
++impl iceberg::arrow::VortexScanCache
++pub fn iceberg::arrow::VortexScanCache::bytes_read(&self) -> u64
++pub fn iceberg::arrow::VortexScanCache::new(file_io: iceberg::io::FileIO, session: vortex_session::session::VortexSession, runtime: iceberg::Runtime) -> Self
++pub fn iceberg::arrow::VortexScanCache::session(&self) -> &vortex_session::session::VortexSession
++impl core::clone::Clone for iceberg::arrow::VortexScanCache
++pub fn iceberg::arrow::VortexScanCache::clone(&self) -> iceberg::arrow::VortexScanCache
++impl core::fmt::Debug for iceberg::arrow::VortexScanCache
++pub fn iceberg::arrow::VortexScanCache::fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+ pub struct iceberg::arrow::VortexScanSource
+ impl iceberg::arrow::VortexScanSource
+ pub fn iceberg::arrow::VortexScanSource::bytes_read(&self) -> u64
+ pub async fn iceberg::arrow::VortexScanSource::try_new(file_io: iceberg::io::FileIO, schema: iceberg::spec::SchemaRef, tasks: alloc::vec::Vec<iceberg::scan::FileScanTask>, session: vortex_session::session::VortexSession, target_parallelism: core::num::nonzero::NonZeroUsize) -> iceberg::Result<core::option::Option<Self>>
++pub async fn iceberg::arrow::VortexScanSource::try_new_with_cache(cache: &iceberg::arrow::VortexScanCache, schema: iceberg::spec::SchemaRef, tasks: alloc::vec::Vec<iceberg::scan::FileScanTask>, target_parallelism: core::num::nonzero::NonZeroUsize) -> iceberg::Result<core::option::Option<Self>>
+ impl vortex_scan::DataSource for iceberg::arrow::VortexScanSource
+ pub fn iceberg::arrow::VortexScanSource::dtype(&self) -> &vortex_array::dtype::DType
+ pub fn iceberg::arrow::VortexScanSource::field_statistics<'life0, 'life1, 'async_trait>(&'life0 self, _field: &'life1 vortex_array::dtype::field::FieldPath) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = vortex_error::VortexResult<vortex_array::stats::stats_set::StatsSet>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
+@@ -3427,6 +3437,7 @@ pub fn iceberg::table::Table::metadata_location_result(&self) -> iceberg::Result
+ pub fn iceberg::table::Table::metadata_ref(&self) -> iceberg::spec::TableMetadataRef
+ pub fn iceberg::table::Table::reader_builder(&self) -> iceberg::arrow::ArrowReaderBuilder
+ pub fn iceberg::table::Table::readonly(&self) -> bool
++pub fn iceberg::table::Table::runtime(&self) -> &iceberg::Runtime
+ pub fn iceberg::table::Table::scan(&self) -> iceberg::scan::TableScanBuilder<'_>
+ pub fn iceberg::table::Table::with_runtime(self, runtime: iceberg::Runtime) -> Self
+ impl core::clone::Clone for iceberg::table::Table
+diff --git a/crates/iceberg/src/arrow/mod.rs b/crates/iceberg/src/arrow/mod.rs
+index 6684caa9f0bc619676784f4038604510912e3ac5..58234c87cb59aaac88a9a76349e9a688e4c70d2b 100644
+--- a/crates/iceberg/src/arrow/mod.rs
++++ b/crates/iceberg/src/arrow/mod.rs
+@@ -38,7 +38,7 @@ pub(crate) use record_batch_transformer::build_partition_constant;
+ mod scan_metrics;
+ mod value;
+ 
+-pub use reader::vortex::source::VortexScanSource;
++pub use reader::vortex::source::{VortexScanCache, VortexScanSource};
+ pub use reader::*;
+ pub use scan_metrics::{ScanMetrics, ScanResult};
+ pub use value::*;
+diff --git a/crates/iceberg/src/arrow/reader/vortex/source.rs b/crates/iceberg/src/arrow/reader/vortex/source.rs
+index ca6169aa5b2d89fe84e2b010495809e0d8ffa7b1..1caac777369584805bc69d12b703255c90ca5055 100644
+--- a/crates/iceberg/src/arrow/reader/vortex/source.rs
++++ b/crates/iceberg/src/arrow/reader/vortex/source.rs
+@@ -15,6 +15,8 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++mod cache;
++
+ use std::any::Any;
+ use std::num::NonZeroUsize;
+ use std::ops::Range;
+@@ -23,6 +25,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
+ use std::task::Poll;
+ 
+ use async_trait::async_trait;
++pub use cache::VortexScanCache;
+ use futures::{StreamExt, stream};
+ use vortex::array::stats::StatsSet;
+ use vortex::array::stream::{ArrayStreamAdapter, SendableArrayStream};
+@@ -32,7 +35,6 @@ use vortex::error::{VortexResult, vortex_bail};
+ use vortex::expr::stats::Precision;
+ use vortex::expr::transform::replace;
+ use vortex::expr::{BoundExpression, Expression, and_collect, cast, get_item, lit, pack, root};
+-use vortex::file::VortexFile;
+ use vortex::scalar::Scalar;
+ use vortex::scan::selection::Selection;
+ use vortex::scan::{
+@@ -41,14 +43,14 @@ use vortex::scan::{
+ };
+ use vortex::session::VortexSession;
+ 
+-use super::{byte_range_to_rows, convert_predicate_to_vortex, open_vortex_file};
+-use crate::Result;
++use super::{byte_range_to_rows, convert_predicate_to_vortex};
+ use crate::arrow::vortex_util::VORTEX_SCHEMA_KEY;
+ use crate::arrow::{schema_to_arrow_schema, to_iceberg_error};
+ use crate::io::FileIO;
+ use crate::metadata_columns::is_metadata_field;
+ use crate::scan::FileScanTask;
+ use crate::spec::{DataFileFormat, PrimitiveType, Schema, SchemaRef, Type};
++use crate::{Result, Runtime};
+ 
+ /// Scans supported Iceberg Vortex tasks into Vortex arrays.
+ ///
+@@ -67,7 +69,7 @@ impl VortexScanSource {
+     /// optional fields without defaults. Deletes, partition constants, and metadata columns
+     /// need the Arrow reader.
+     /// All file schemas are checked before this method returns a usable source.
+-    /// Keep the runtime that opens these files alive and driven while using the source.
++    /// The caller must keep the current Tokio runtime alive while the source is in use.
+     pub async fn try_new(
+         file_io: FileIO,
+         schema: SchemaRef,
+@@ -75,6 +77,21 @@ impl VortexScanSource {
+         session: VortexSession,
+         target_parallelism: NonZeroUsize,
+     ) -> Result<Option<Self>> {
++        let cache = VortexScanCache::new(file_io, session, Runtime::try_current()?);
++        Self::try_new_with_cache(&cache, schema, tasks, target_parallelism).await
++    }
++
++    /// Prepares a scan while reusing immutable file handles from `cache`.
++    ///
++    /// The same supported-task checks as [`Self::try_new`] apply. Schemas, defaults,
++    /// predicates, and ranges are validated for this scan, independently of cached file handles.
++    pub async fn try_new_with_cache(
++        cache: &VortexScanCache,
++        schema: SchemaRef,
++        tasks: Vec<FileScanTask>,
++        target_parallelism: NonZeroUsize,
++    ) -> Result<Option<Self>> {
++        let session = cache.session();
+         if schema.as_struct().fields().iter().any(|field| {
+             !matches!(field.field_type.as_ref(), Type::Primitive(_)) || is_metadata_field(field.id)
+         }) || tasks.iter().any(|task| {
+@@ -92,22 +109,16 @@ impl VortexScanSource {
+         }) {
+             return Ok(None);
+         }
+-        let Some(dtype) = array_source_dtype(&schema, &session) else {
++        let Some(dtype) = array_source_dtype(&schema, session) else {
+             return Ok(None);
+         };
+-        let bytes_read = Arc::new(AtomicU64::new(0));
++        let bytes_read = Arc::clone(cache.bytes_read_counter());
+         let mut prepared = Vec::with_capacity(tasks.len());
+         // A partially supported snapshot must never yield rows before the caller falls back.
+         for task in tasks {
+-            let (file, file_size) = open_vortex_file(
+-                task.data_file_path(),
+-                task.file_size_in_bytes(),
+-                task.key_metadata(),
+-                &file_io,
+-                Arc::clone(&bytes_read),
+-                &session,
+-            )
+-            .await?;
++            let (file, file_size) = cache
++                .open(task.data_file_path(), task.file_size_in_bytes())
++                .await?;
+             let file_schema = match file.metadata_segment(VORTEX_SCHEMA_KEY) {
+                 Some(bytes) => serde_json::from_slice::<Schema>(bytes.as_slice())?,
+                 None => {
+@@ -125,7 +136,7 @@ impl VortexScanSource {
+                     Schema::try_from(arrow_schema.as_ref())?
+                 }
+             };
+-            let Some(expected_file_dtype) = array_source_dtype(&file_schema, &session) else {
++            let Some(expected_file_dtype) = array_source_dtype(&file_schema, session) else {
+                 return Ok(None);
+             };
+             if file.dtype() != &expected_file_dtype {
+@@ -138,11 +149,10 @@ impl VortexScanSource {
+             let predicate = task
+                 .predicate()
+                 .map(|predicate| {
+-                    convert_predicate_to_vortex(
+-                        &predicate.clone().rewrite_not(),
+-                        &file_schema,
+-                        file.dtype(),
+-                    )
++                    // Directly built or deserialized tasks may bypass TableScan's NOT rewrite.
++                    // A conservative missing-field match must not be negated into a false match.
++                    let predicate = predicate.clone().rewrite_not();
++                    convert_predicate_to_vortex(&predicate, &file_schema, file.dtype())
+                 })
+                 .transpose()?;
+             let rows = if task.start() == 0 && task.length() == 0 {
+@@ -174,7 +184,7 @@ impl VortexScanSource {
+                     .into_iter()
+                     .map(move |(rows, bytes)| {
+                         Arc::new(PreparedTask {
+-                            file: task.file.clone(),
++                            file: Arc::clone(&task.file),
+                             normalize: task.normalize.clone(),
+                             predicate: task.predicate.clone(),
+                             rows,
+@@ -190,14 +200,17 @@ impl VortexScanSource {
+         }))
+     }
+ 
+-    /// Returns bytes read through Iceberg FileIO, including file metadata.
++    /// Returns cumulative bytes read through this source's cache, including file metadata.
++    ///
++    /// Sources prepared with the same [`VortexScanCache`] share this counter. It includes reads
++    /// from concurrent and previous scans, and is not a per-query IO measurement.
+     pub fn bytes_read(&self) -> u64 {
+         self.bytes_read.load(Ordering::Relaxed)
+     }
+ }
+ 
+ struct PreparedTask {
+-    file: VortexFile,
++    file: Arc<vortex::file::VortexFile>,
+     normalize: Expression,
+     predicate: Option<Expression>,
+     rows: Range<u64>,
+@@ -562,13 +575,15 @@ mod tests {
+     use vortex::session::VortexSession;
+ 
+     use super::{
+-        VortexScanSource, array_source_dtype, reserve_rows, task_ranges, task_rows, task_selection,
++        VortexScanCache, VortexScanSource, array_source_dtype, reserve_rows, task_ranges,
++        task_rows, task_selection,
+     };
++    use crate::Runtime;
+     use crate::arrow::schema_to_arrow_schema;
+     use crate::expr::{Bind, BoundPredicate, Reference};
+     use crate::io::FileIO;
+     use crate::scan::FileScanTask;
+-    use crate::spec::{DataFileFormat, NestedField, PrimitiveType, Schema, SchemaRef, Type};
++    use crate::spec::{DataFileFormat, Datum, NestedField, PrimitiveType, Schema, SchemaRef, Type};
+     use crate::writer::file_writer::{FileWriter, FileWriterBuilder, VortexWriterBuilder};
+ 
+     fn source_task(
+@@ -669,6 +684,86 @@ mod tests {
+         ids
+     }
+ 
++    #[tokio::test]
++    async fn cached_preparation_reuses_metadata_and_keeps_predicates_query_local() {
++        let (_directory, file_io, schema, task) = source_fixture().await;
++        let cache = VortexScanCache::new(file_io, VortexSession::default(), Runtime::current());
++        let parallelism = NonZeroUsize::new(4).unwrap();
++        let source = VortexScanSource::try_new_with_cache(
++            &cache,
++            schema.clone(),
++            vec![task.clone()],
++            parallelism,
++        )
++        .await
++        .unwrap()
++        .unwrap();
++        let metadata_bytes = cache.bytes_read();
++        assert!(metadata_bytes > 0);
++        let predicate = Reference::new("id")
++            .greater_than(Datum::long(120))
++            .bind(schema.clone(), true)
++            .unwrap();
++        let filtered_task = source_task(
++            task.data_file_path(),
++            task.file_size_in_bytes(),
++            schema.clone(),
++            Some(predicate),
++        );
++        let filtered =
++            VortexScanSource::try_new_with_cache(&cache, schema, vec![filtered_task], parallelism)
++                .await
++                .unwrap()
++                .unwrap();
++        assert_eq!(cache.bytes_read(), metadata_bytes);
++        assert_eq!(
++            source_ids(&source, cache.session()).await,
++            (0..128).collect::<Vec<_>>()
++        );
++        assert_eq!(
++            source_ids(&filtered, cache.session()).await,
++            (121..128).collect::<Vec<_>>()
++        );
++        assert_eq!(source.bytes_read(), cache.bytes_read());
++        assert_eq!(filtered.bytes_read(), cache.bytes_read());
++    }
++
++    #[tokio::test]
++    async fn concurrent_cached_preparation_coalesces_file_opens() {
++        let (_directory, file_io, schema, task) = source_fixture().await;
++        let session = VortexSession::default();
++        let single_cache =
++            VortexScanCache::new(file_io.clone(), session.clone(), Runtime::current());
++        let parallelism = NonZeroUsize::new(4).unwrap();
++        VortexScanSource::try_new_with_cache(
++            &single_cache,
++            schema.clone(),
++            vec![task.clone()],
++            parallelism,
++        )
++        .await
++        .unwrap()
++        .unwrap();
++        let cache = VortexScanCache::new(file_io, session, Runtime::current());
++        let (first, second) = futures::try_join!(
++            VortexScanSource::try_new_with_cache(
++                &cache,
++                schema.clone(),
++                vec![task.clone()],
++                parallelism
++            ),
++            VortexScanSource::try_new_with_cache(&cache, schema, vec![task], parallelism),
++        )
++        .unwrap();
++        assert_eq!(cache.bytes_read(), single_cache.bytes_read());
++        for source in [first.unwrap(), second.unwrap()] {
++            assert_eq!(
++                source_ids(&source, cache.session()).await,
++                (0..128).collect::<Vec<_>>()
++            );
++        }
++    }
++
+     #[tokio::test]
+     async fn directly_built_tasks_rewrite_not_before_matching_missing_fields() {
+         let (_directory, file_io, schema, task) = source_fixture().await;
+@@ -698,15 +793,27 @@ mod tests {
+         );
+         let parallelism = NonZeroUsize::new(4).unwrap();
+         let session = VortexSession::default();
+-        let fresh =
+-            VortexScanSource::try_new(file_io, evolved, vec![task], session.clone(), parallelism)
+-                .await
+-                .unwrap()
+-                .unwrap();
+-        assert_eq!(
+-            source_ids(&fresh, &session).await,
+-            (0..128).collect::<Vec<_>>()
+-        );
++        let fresh = VortexScanSource::try_new(
++            file_io.clone(),
++            evolved.clone(),
++            vec![task.clone()],
++            session.clone(),
++            parallelism,
++        )
++        .await
++        .unwrap()
++        .unwrap();
++        let cache = VortexScanCache::new(file_io, session, Runtime::current());
++        let cached = VortexScanSource::try_new_with_cache(&cache, evolved, vec![task], parallelism)
++            .await
++            .unwrap()
++            .unwrap();
++        for source in [fresh, cached] {
++            assert_eq!(
++                source_ids(&source, cache.session()).await,
++                (0..128).collect::<Vec<_>>()
++            );
++        }
+     }
+ 
+     #[tokio::test]
+diff --git a/crates/iceberg/src/arrow/reader/vortex/source/cache.rs b/crates/iceberg/src/arrow/reader/vortex/source/cache.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..57e1d207a16acc884cded0d158debda9e12fe9b4
+--- /dev/null
++++ b/crates/iceberg/src/arrow/reader/vortex/source/cache.rs
+@@ -0,0 +1,121 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++use std::fmt;
++use std::sync::Arc;
++use std::sync::atomic::{AtomicU64, Ordering};
++
++use moka::future::Cache;
++use vortex::file::VortexFile;
++use vortex::session::VortexSession;
++
++use super::super::open_vortex_file;
++use crate::io::FileIO;
++use crate::{Error, Result, Runtime};
++
++const MAX_OPEN_FILES: u64 = 128;
++
++/// Reuses immutable Vortex file handles across Iceberg scans.
++///
++/// Each cache is bound to one [`FileIO`], [`VortexSession`], and [`Runtime`]. Files are identified by their
++/// path and declared size; callers must obey Iceberg's immutable data-file contract and must
++/// not reuse a cache after changing the storage binding or access authorization. Cloning a
++/// cache shares its handles and counters. The cache uses Moka's bounded policy with a capacity
++/// of 128 entries; active scans may keep evicted handles alive. Layout readers are created per
++/// scan so their expression and pruning caches do not grow across queries. Files are opened on
++/// the supplied runtime's IO executor; the caller must keep that runtime alive while cached files
++/// are in use, as required by [`Runtime`].
++#[derive(Clone)]
++pub struct VortexScanCache {
++    file_io: FileIO,
++    session: VortexSession,
++    runtime: Runtime,
++    files: Cache<(String, u64), (Arc<VortexFile>, u64)>,
++    bytes_read: Arc<AtomicU64>,
++}
++
++impl fmt::Debug for VortexScanCache {
++    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
++        formatter
++            .debug_struct("VortexScanCache")
++            .field("entry_count", &self.files.entry_count())
++            .field("bytes_read", &self.bytes_read())
++            .finish_non_exhaustive()
++    }
++}
++
++impl VortexScanCache {
++    /// Creates a cache scoped to this storage binding, Vortex session, and explicit IO runtime.
++    ///
++    /// The supplied session must dispatch onto the current Tokio runtime (as Vortex's default
++    /// session does), or be explicitly configured to use this runtime's IO executor.
++    pub fn new(file_io: FileIO, session: VortexSession, runtime: Runtime) -> Self {
++        Self {
++            file_io,
++            session,
++            runtime,
++            files: Cache::new(MAX_OPEN_FILES),
++            bytes_read: Arc::new(AtomicU64::new(0)),
++        }
++    }
++
++    /// Returns the session used by all cached files.
++    pub fn session(&self) -> &VortexSession {
++        &self.session
++    }
++
++    /// Returns cumulative bytes read through this cache's FileIO, including file metadata.
++    ///
++    /// This is shared by all scans and cache clones, including reads through handles retained
++    /// by active scans after eviction. It is not a per-query IO measurement.
++    pub fn bytes_read(&self) -> u64 {
++        self.bytes_read.load(Ordering::Relaxed)
++    }
++
++    pub(super) fn bytes_read_counter(&self) -> &Arc<AtomicU64> {
++        &self.bytes_read
++    }
++
++    pub(super) async fn open(
++        &self,
++        path: &str,
++        declared_size: u64,
++    ) -> Result<(Arc<VortexFile>, u64)> {
++        self.files
++            .try_get_with((path.to_owned(), declared_size), async {
++                let path = path.to_owned();
++                let file_io = self.file_io.clone();
++                let session = self.session.clone();
++                let bytes_read = Arc::clone(&self.bytes_read);
++                // Opening a Vortex file spawns a persistent IO driver. Anchor that driver to
++                // the explicit cache runtime, independently of the scan's planning runtime.
++                let (file, size) = self
++                    .runtime
++                    .io()
++                    .spawn(async move {
++                        open_vortex_file(&path, declared_size, None, &file_io, bytes_read, &session)
++                            .await
++                    })
++                    .await??;
++                Ok::<_, Error>((Arc::new(file), size))
++            })
++            .await
++            .map_err(|error| {
++                Error::new(error.kind(), "Failed to open a cached Vortex file").with_source(error)
++            })
++    }
++}
+diff --git a/crates/iceberg/src/table.rs b/crates/iceberg/src/table.rs
+index f33c246eb7d15021929b25ea9d5fd70fae20ad51..5e474efdc8b905b99403c96eae7ace0eaf7da052 100644
+--- a/crates/iceberg/src/table.rs
++++ b/crates/iceberg/src/table.rs
+@@ -292,7 +292,11 @@ impl Table {
+     }
+ 
+     /// Returns the [`Runtime`] for this table.
+-    pub(crate) fn runtime(&self) -> &Runtime {
++    ///
++    /// This borrows execution handles rather than owning the underlying Tokio runtime. The
++    /// caller must keep that runtime alive while table planning and reads are in progress,
++    /// following [`Runtime`]'s lifetime contract.
++    pub fn runtime(&self) -> &Runtime {
+         &self.runtime
+     }
+ 
+-- 
+2.46.0
+

@@ -1,21 +1,24 @@
 # Iceberg Rust patch series
 
-These nine patches contain the remaining native Iceberg changes used by
-ColdFusion, based on `spiraldb/iceberg-rust` main. Changes that cancel out have
-been removed from the series.
+These 13 patches contain the native Iceberg changes used by ColdFusion, based on
+`spiraldb/iceberg-rust` main. The provider remains in ColdFusion; this native
+workspace has no DataFusion dependency or adapter.
 
 - Repository: https://github.com/spiraldb/iceberg-rust
-- Branch: `codex/coldfusion-reader`
+- Branch: `codex/scan-pushdown`
 - Base: `ea48146de861ee71d32ba747ca0d182ea7746ed1`
-- Tip: `45376aebbfc5fa0ba94b18837cb2443eb87a68ae`
-- Resulting tree: `7f9e7822a40c5bf67e711ac0d1cf755d23d17877`
+- Tip: `3a409b3130cbe1fa945a6a00bd5c1ae86da0c315`
+- Resulting tree: `f0b51c91eacc9a986d1528f934d7f0343ebf823e`
 
-The full tree is identical to the former 25-commit tip,
-`930277e0209bec6ff321d06ae9b4a0f2e794000f`. This includes `Cargo.lock`, which is
-also identical to the base. Existing benchmark records retain the source commits
-actually measured; the historical tip remains available for provenance.
+The first nine patches preserve the previous compaction: their tree is exactly
+`7f9e7822a40c5bf67e711ac0d1cf755d23d17877`, matching the historical 25-commit tip
+`930277e0209bec6ff321d06ae9b4a0f2e794000f`. Their exported bytes, numbering
+headers, checksums and manifest entries are unchanged. That equality applies to
+**the first nine patches**, not to this extended tip. Patches 10–13 intentionally
+change the Vortex dependency and reader behavior. Existing benchmark records keep
+the source revisions actually measured.
 
-Apply the numbered patches in lexical order to a clean checkout of the base:
+Apply every numbered patch in lexical order to a clean checkout of the base:
 
 ```sh
 git checkout --detach ea48146de861ee71d32ba747ca0d182ea7746ed1
@@ -25,36 +28,66 @@ done
 git write-tree
 ```
 
-The resulting tree must be `7f9e7822a40c5bf67e711ac0d1cf755d23d17877`.
-All nine exports were replayed this way, and the temporary worktree was removed.
-[manifest.json](manifest.json) records the ordered commits, original source
-commits, checksums, removed empty groups, and replay verification.
-[base-tip.txt](base-tip.txt) records the identities in plain text.
+The resulting tree must be `f0b51c91eacc9a986d1528f934d7f0343ebf823e`. Verification replayed all 13 patches and the
+four-patch extension separately through isolated Git indexes and object stores.
+Each intermediate tree matched its source commit. No checkout or commits were
+created. The retained series has no empty commit, repeated boundary tree, or
+exact inverse patch pair.
+
+[manifest.json](manifest.json) records ordered commits, checksums, the preserved
+first-nine `compaction` proof and removed empty groups, the new `extension`
+range, and the full-series replay. [base-tip.txt](base-tip.txt) records these
+identities in plain text.
 
 ## Remaining patches
 
 | # | Commit | Purpose |
 | --- | --- | --- |
 | 1 | `6c22c0f4` | Assign disjoint Parquet row groups using physical offsets and expose validated task byte ranges. |
-| 2 | `18ba96a7` | Preserve decoded predicate comparisons when schema promotion makes a literal wider than the physical column type. |
-| 3 | `33a62e31` | Add optional background decoding on the existing CPU executor, with bounded buffering, cancellation, and error propagation. |
-| 4 | `cd721649` | Observe producer compute time even when the consumer cancels. |
-| 5 | `d412cf8d` | Yield cooperatively between background reader batches. |
-| 6 | `b75c074e` | Add a generic per-file Parquet row-filter factory alongside native predicates and deletes. ColdFusion owns the DataFusion expression adaptation. |
-| 7 | `09af27a9` | Support opt-in Arrow string/binary views. This native API remains a real change; ColdFusion currently uses canonical Arrow output. |
-| 8 | `13545bbe` | Enter the configured I/O context while polling foreground Parquet reads, supporting separate I/O and compute runtimes. |
-| 9 | `45376aeb` | Promote physical Int32/Float page bounds to Long/Double before pruning, with indexed-file regression tests. |
+| 2 | `18ba96a7` | Preserve decoded predicate comparisons after schema promotion. |
+| 3 | `33a62e31` | Support bounded background decoding on the existing CPU executor. |
+| 4 | `cd721649` | Observe producer compute time through consumer cancellation. |
+| 5 | `d412cf8d` | Yield cooperatively between background batches. |
+| 6 | `b75c074e` | Add generic per-file Parquet row-filter factories; ColdFusion owns expression adaptation. |
+| 7 | `09af27a9` | Expose opt-in Arrow string/binary view output. |
+| 8 | `13545bbe` | Poll foreground Parquet reads with the configured I/O runtime. |
+| 9 | `45376aeb` | Promote physical Int32/Float page bounds to Long/Double before pruning. |
+| 10 | `f00af1ca` | Align the native Vortex dependency and reader/writer APIs with the Arbor revision. |
+| 11 | `71886fef` | Filter native Vortex layout batches before bounding Arrow output batches, preserving configured output types. |
+| 12 | `0038736e` | Expose supported Iceberg Vortex tasks as a generic native Vortex array source, with conservative whole-scan fallback. |
+| 13 | `3a409b31` | Reuse bounded immutable Vortex file metadata handles on the table's I/O runtime while keeping query state separate. |
 
-## Removed empty groups
+## Native Vortex source access
 
-- The Vortex feature-gating change and its exact reversal: former commits
-  `eed7a41c` and `278b205d`. Vortex remains built-in, as it was at the base.
-- The staged-conjunct experiment and its exact reversal: former commits
-  `f8d72b03` and `943df5d1`.
-- The obsolete DataFusion adapter's addition, later edits, and eventual removal,
-  including its lockfile changes. The adapter directory is absent at both
-  endpoints. Native changes from mixed commits were retained separately.
+`iceberg::arrow::VortexScanSource` implements Vortex's `DataSource` interface.
+It keeps supported predicates and projections in Vortex arrays until a consumer
+needs Arrow. `try_new` creates a source for one scan. Repeated scans can use
+`VortexScanCache::new(file_io, session, runtime)` with `try_new_with_cache`;
+`Table::runtime()` exposes the configured execution handles. Keep the underlying
+I/O runtime alive and driven while planning and reading, even if a shorter-lived
+planning runtime stops.
 
-Only native reader code, tests, and API inventory remain in this series. The
-DataFusion provider is maintained in this ColdFusion repository and depends on
-Iceberg and DataFusion; the native Iceberg workspace has no DataFusion adapter.
+Construction validates every task and file schema before returning a usable
+source. It supports a checked subset of top-level primitive schemas, field-ID
+renames, safe promotions, and missing optional fields without defaults. Keep the
+original tasks for fallback: `Ok(None)` means the **whole scan** must use the
+Arrow reader. Deletes, partition constants, metadata columns and other unsupported
+shapes must not be silently omitted or combined with partially emitted source
+rows. Partition row ranges and selections use ordinals relative to stable source
+partitions. Unordered scans share a global row limit across partitions. Ordered
+scans apply the limit per partition; callers must trim the combined ordered output
+to enforce a global limit.
+
+The cache reuses at most 128 opened immutable file handles. Schema adaptation,
+expressions and pruning state remain query-local. Its byte counter is cumulative
+cache I/O, not an exact per-query physical-disk byte count. The source and cache
+APIs contain no DataFusion types; ColdFusion owns the engine adapter.
+
+## Removed empty history
+
+The first-nine compaction removed the Vortex feature-gating change and its exact
+reversal, the staged-conjunct experiment and its exact reversal, and the obsolete
+DataFusion adapter's complete lifetime including its lockfile edits. The native
+portions of mixed commits remain. The compaction's `Cargo.lock` equaled its base;
+patch 10 now intentionally changes the lockfile for the aligned Vortex revision.
+Vortex remains built-in throughout the retained series.

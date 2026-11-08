@@ -1,9 +1,11 @@
 repository https://github.com/spiraldb/iceberg-rust
-branch codex/coldfusion-reader
+branch codex/scan-pushdown
 base ea48146de861ee71d32ba747ca0d182ea7746ed1
-tip 45376aebbfc5fa0ba94b18837cb2443eb87a68ae
-tree 7f9e7822a40c5bf67e711ac0d1cf755d23d17877
-patches 9
+tip 3a409b3130cbe1fa945a6a00bd5c1ae86da0c315
+tree f0b51c91eacc9a986d1528f934d7f0343ebf823e
+patches 13
+compaction_tip 45376aebbfc5fa0ba94b18837cb2443eb87a68ae
+compaction_tree 7f9e7822a40c5bf67e711ac0d1cf755d23d17877
 historical_tip 930277e0209bec6ff321d06ae9b4a0f2e794000f
 historical_tree 7f9e7822a40c5bf67e711ac0d1cf755d23d17877
-matches_historical_tree true
+first_nine_match_historical_tree true

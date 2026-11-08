@@ -1,14 +1,11 @@
 {
   "repository": "https://github.com/spiraldb/iceberg-rust",
-  "branch": "codex/coldfusion-reader",
+  "branch": "codex/scan-pushdown",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "45376aebbfc5fa0ba94b18837cb2443eb87a68ae",
-  "tip_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
-  "patch_count": 9,
-  "historical_tip_commit": "930277e0209bec6ff321d06ae9b4a0f2e794000f",
-  "historical_tip_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
-  "matches_historical_tree": true,
+  "tip_commit": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
+  "tip_tree": "f0b51c91eacc9a986d1528f934d7f0343ebf823e",
+  "patch_count": 13,
   "patches": [
     {
       "patch": "0001-Split-Parquet-scans-using-physical-row-group-offsets.patch",
@@ -81,92 +78,161 @@
       "original_commit": "930277e0209bec6ff321d06ae9b4a0f2e794000f",
       "sha256": "24f3c82e66a80d62c23255c503749b407aa264ab313109857902c7158596c4f1",
       "original_series_index": 25
+    },
+    {
+      "patch": "0010-Align-the-native-Vortex-reader-with-the-Arbor-revisi.patch",
+      "commit": "f00af1ca5cac3d1170b740edbd6187410294f22b",
+      "subject": "Align the native Vortex reader with the Arbor revision",
+      "sha256": "53e6f5a877fc50ec82ee938ed1e601b8d5d074532a1172e34f7994ea6da9329c"
+    },
+    {
+      "patch": "0011-Filter-Vortex-layout-batches-before-limiting-Arrow-o.patch",
+      "commit": "71886fef5be41f4f5b882c9fbab3ba12df17fccd",
+      "subject": "Filter Vortex layout batches before limiting Arrow output",
+      "sha256": "440542a2349a208180d77ba5dadaaa2537172d88eb7189a34cb010307af45a84"
+    },
+    {
+      "patch": "0012-Expose-supported-Iceberg-Vortex-tasks-as-a-native-ar.patch",
+      "commit": "0038736e653c21694a544fc1ca42b987a78364d3",
+      "subject": "Expose supported Iceberg Vortex tasks as a native array source",
+      "sha256": "46b1e67996fe2010b5c4cb9330854ef8da80a0d096ee8b895341ce53933f2cbd"
+    },
+    {
+      "patch": "0013-Reuse-opened-Vortex-files-on-the-table-IO-runtime.patch",
+      "commit": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
+      "subject": "Reuse opened Vortex files on the table IO runtime",
+      "sha256": "57b1015d6cb3e11e32fe4eb39054470902df40f103380c3c62e6ff3b2ef7ff37"
     }
   ],
-  "removed_empty_groups": {
-    "vortex_feature_gate": {
-      "original_commits": [
-        "eed7a41cebd73263aa6f8b73b22095e5ccf30748",
-        "278b205d05a87695be6f5d2bc5f76b09f4456256"
-      ],
-      "forward_and_reverse_patch_id": "6acebd179f07bbb31d317571224bfcd4fed075eb"
+  "compaction": {
+    "patch_count": 9,
+    "branch": "codex/coldfusion-reader",
+    "tip_commit": "45376aebbfc5fa0ba94b18837cb2443eb87a68ae",
+    "tip_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
+    "historical_tip_commit": "930277e0209bec6ff321d06ae9b4a0f2e794000f",
+    "historical_tip_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
+    "matches_historical_tree": true,
+    "removed_empty_groups": {
+      "vortex_feature_gate": {
+        "original_commits": [
+          "eed7a41cebd73263aa6f8b73b22095e5ccf30748",
+          "278b205d05a87695be6f5d2bc5f76b09f4456256"
+        ],
+        "forward_and_reverse_patch_id": "6acebd179f07bbb31d317571224bfcd4fed075eb"
+      },
+      "staged_conjunct_experiment": {
+        "original_commits": [
+          "f8d72b0392b8f0e7c448461d60e0ced99fbed388",
+          "943df5d17f75f6c450ff12089083b1972e4478dc"
+        ],
+        "forward_and_reverse_patch_id": "108b66dfd4bccc64423103d2a675e6e6fcc26d3c"
+      },
+      "obsolete_provider_lifetime": {
+        "paths": [
+          "Cargo.lock",
+          "crates/integrations/datafusion"
+        ],
+        "endpoint_paths_unchanged": true,
+        "cargo_lock_blob": "f97aa6714d0a354158515827e7819c433bff8afa",
+        "mixed_commits_native_portions_retained": [
+          "efedf229d2a071973f0511b9d1111e988fe2a0cc",
+          "1486e2b6eaa7accafd68eff325e84b3e74e9d04b",
+          "f125ab6449dbceb58ca125c980c40b522ad3e90a"
+        ],
+        "provider_only_original_commits": [
+          {
+            "original_series_index": 3,
+            "commit": "5ca9dac1b269540dfe8aa326ab42362bbb7ba52b"
+          },
+          {
+            "original_series_index": 4,
+            "commit": "a21a8d2049bc60d47929ea7212c7537348980356"
+          },
+          {
+            "original_series_index": 5,
+            "commit": "77e435776a2d0bae4c1bcad69c8981de8309654c"
+          },
+          {
+            "original_series_index": 6,
+            "commit": "b75bcdb0724dbca245ca9d69d20664e67b92637f"
+          },
+          {
+            "original_series_index": 9,
+            "commit": "6acff8d55be27db16bfdf6ea68755f24881cc384"
+          },
+          {
+            "original_series_index": 14,
+            "commit": "0f05fc5eb955368684ca179866eb8da528e19d3b"
+          },
+          {
+            "original_series_index": 17,
+            "commit": "69f157b716ba4bc776705826a1b7f4923b9573ed"
+          },
+          {
+            "original_series_index": 18,
+            "commit": "2e4c372c2199206bcef28d75768f4a173cb1ca8d"
+          },
+          {
+            "original_series_index": 19,
+            "commit": "6bc2ff7a860e62eaff73c84ae11b0a2f994dc789"
+          },
+          {
+            "original_series_index": 21,
+            "commit": "252ab5699fee9fb1f35c922bce722bb23f745ddb"
+          },
+          {
+            "original_series_index": 22,
+            "commit": "04c96e42614ccf36f89fb3f699739eeb45e9838b"
+          },
+          {
+            "original_series_index": 24,
+            "commit": "d28e192ceba4105ff4b4480021d94e3df747915b"
+          }
+        ]
+      }
     },
-    "staged_conjunct_experiment": {
-      "original_commits": [
-        "f8d72b0392b8f0e7c448461d60e0ced99fbed388",
-        "943df5d17f75f6c450ff12089083b1972e4478dc"
-      ],
-      "forward_and_reverse_patch_id": "108b66dfd4bccc64423103d2a675e6e6fcc26d3c"
-    },
-    "obsolete_provider_lifetime": {
-      "paths": [
-        "Cargo.lock",
-        "crates/integrations/datafusion"
-      ],
-      "endpoint_paths_unchanged": true,
-      "cargo_lock_blob": "f97aa6714d0a354158515827e7819c433bff8afa",
-      "mixed_commits_native_portions_retained": [
-        "efedf229d2a071973f0511b9d1111e988fe2a0cc",
-        "1486e2b6eaa7accafd68eff325e84b3e74e9d04b",
-        "f125ab6449dbceb58ca125c980c40b522ad3e90a"
-      ],
-      "provider_only_original_commits": [
-        {
-          "original_series_index": 3,
-          "commit": "5ca9dac1b269540dfe8aa326ab42362bbb7ba52b"
-        },
-        {
-          "original_series_index": 4,
-          "commit": "a21a8d2049bc60d47929ea7212c7537348980356"
-        },
-        {
-          "original_series_index": 5,
-          "commit": "77e435776a2d0bae4c1bcad69c8981de8309654c"
-        },
-        {
-          "original_series_index": 6,
-          "commit": "b75bcdb0724dbca245ca9d69d20664e67b92637f"
-        },
-        {
-          "original_series_index": 9,
-          "commit": "6acff8d55be27db16bfdf6ea68755f24881cc384"
-        },
-        {
-          "original_series_index": 14,
-          "commit": "0f05fc5eb955368684ca179866eb8da528e19d3b"
-        },
-        {
-          "original_series_index": 17,
-          "commit": "69f157b716ba4bc776705826a1b7f4923b9573ed"
-        },
-        {
-          "original_series_index": 18,
-          "commit": "2e4c372c2199206bcef28d75768f4a173cb1ca8d"
-        },
-        {
-          "original_series_index": 19,
-          "commit": "6bc2ff7a860e62eaff73c84ae11b0a2f994dc789"
-        },
-        {
-          "original_series_index": 21,
-          "commit": "252ab5699fee9fb1f35c922bce722bb23f745ddb"
-        },
-        {
-          "original_series_index": 22,
-          "commit": "04c96e42614ccf36f89fb3f699739eeb45e9838b"
-        },
-        {
-          "original_series_index": 24,
-          "commit": "d28e192ceba4105ff4b4480021d94e3df747915b"
-        }
+    "verification": {
+      "method": "Sequential git apply --index in an owned detached worktree at the base; git write-tree equals both compacted and historical tip trees. No commits created. Temporary worktree removed after verification.",
+      "verified_utc": "2026-11-07T05:52:45.427857+00:00",
+      "applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
+      "matches_tip_tree": true,
+      "matches_historical_tree": true
+    }
+  },
+  "extension": {
+    "base_commit": "45376aebbfc5fa0ba94b18837cb2443eb87a68ae",
+    "tip_commit": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
+    "patch_count": 4,
+    "commits": [
+      "f00af1ca5cac3d1170b740edbd6187410294f22b",
+      "71886fef5be41f4f5b882c9fbab3ba12df17fccd",
+      "0038736e653c21694a544fc1ca42b987a78364d3",
+      "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315"
+    ],
+    "verification": {
+      "method": "Sequential git apply --cached through an isolated Git index and object directory under ignored diagnostics, using native objects read-only as alternates; git write-tree matches each commit tree. No checkout, commits, shared index or native object writes.",
+      "base_commit": "45376aebbfc5fa0ba94b18837cb2443eb87a68ae",
+      "patch_count": 4,
+      "applied_tree": "f0b51c91eacc9a986d1528f934d7f0343ebf823e",
+      "matches_tip_tree": true,
+      "boundary_trees": [
+        "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
+        "ef237d019566db097a98fa6999c2bc817f8e9c28",
+        "2c8ae2972991ca59d59688a0691de7c120ee6349",
+        "13c772bc5a7f65ea60d4bae52c3a6a87f70f2538",
+        "f0b51c91eacc9a986d1528f934d7f0343ebf823e"
       ]
     }
   },
   "verification": {
-    "method": "Sequential git apply --index in an owned detached worktree at the base; git write-tree equals both compacted and historical tip trees. No commits created. Temporary worktree removed after verification.",
-    "verified_utc": "2026-11-07T05:52:45.427857+00:00",
-    "applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
+    "method": "Sequential git apply --cached through an isolated Git index and object directory under ignored diagnostics, using native objects read-only as alternates; git write-tree matches each commit tree. No checkout, commits, shared index or native object writes.",
+    "verified_utc": "2026-11-08T08:29:14.433572+00:00",
+    "applied_tree": "f0b51c91eacc9a986d1528f934d7f0343ebf823e",
     "matches_tip_tree": true,
-    "matches_historical_tree": true
+    "first_nine_applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
+    "first_nine_match_historical_tree": true,
+    "every_commit_nonempty": true,
+    "exact_inverse_pairs": [],
+    "repeated_boundary_trees": []
   }
 }

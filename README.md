@@ -78,13 +78,16 @@ independently of file compression.
 
 The dependency starts from `spiraldb/iceberg-rust` main at
 `ea48146de861ee71d32ba747ca0d182ea7746ed1` and is pinned in `Cargo.toml`.
-The [nine-patch series](patches/iceberg-rust/) contains only nonempty native
-changes. Its final Git tree is identical to the historical reader revision
-`930277e0` used by the recorded benchmarks. Cancelling experiments and obsolete
-adapter changes are omitted; the measured revision identities remain valid.
-It includes Parquet split ownership, promoted-literal and page-bound fixes,
-runtime and cancellation support, and the per-file row-filter extension used by
-this crate.
+The [13-patch series](patches/iceberg-rust/) contains nonempty native changes.
+Its first nine patches preserve the historical reader tree `930277e0`; four
+additional commits align Vortex with Arbor, improve input/output batching, expose
+a native array source, and reuse file metadata on the table IO runtime. The
+extended tip has its own tree and replay proof. Cancelling experiments and the
+obsolete native DataFusion adapter remain omitted.
+
+The series includes Parquet split ownership, promoted-literal and page-bound
+fixes, runtime and cancellation support, and generic reader hooks. DataFusion
+expression adaptation stays in this repository.
 
 ## Validation
 
