@@ -45,28 +45,41 @@ alive while queries execute. Its I/O runtime must be driven; entering its I/O
 context does not drive a current-thread runtime's reactor. Background decoding
 also uses the table's CPU executor.
 
-Decoding runs on DataFusion's workers when they cover the smaller of the output
-partition count and available CPU count. Smaller query runtimes use the table's
-CPU executor with bounded prefetching and cancellation on consumer drop.
+The Arrow reader decodes on DataFusion's workers when they cover the smaller of
+the output partition count and available CPU count. Smaller query runtimes use
+the table's CPU executor with bounded prefetching and cancellation on consumer
+drop. Native Vortex scans use the official Vortex DataSource and are polled on
+DataFusion's workers, independently of that Arrow-reader offload policy.
 
 The provider retains the loaded schema and snapshot. Construct another provider
 to observe catalog changes. Reads use Iceberg's field-ID projection, schema
 evolution, defaults, and positional and equality delete handling. Output uses
-canonical Iceberg Arrow types, including `Utf8` and `LargeBinary`.
+canonical Iceberg Arrow types, including `Utf8` and `LargeBinary`. View types are
+available through `try_new_with_view_types` and remain opt-in.
+
+Supported required-field predicates use exact pushdown by default, removing
+redundant DataFusion residuals. Supported Vortex scans use the native array source
+and reuse opened file metadata; other scans use the Arrow reader, with Vortex
+layout batches filtered before Arrow output is sliced. The
+`with_exact_filter_pushdown`, `with_native_vortex_scan`, and
+`with_vortex_layout_splits` methods can disable these paths independently.
 
 Static primitive predicates prune manifests, row groups, and Parquet pages.
 Page-statistics pruning follows DataFusion's
 `datafusion.execution.parquet.enable_page_index` setting (enabled by default).
 Files without indexes fall back to row-group and decoded-row filtering.
-DataFusion retains residual conditions. Parquet live dynamic filters use cheap
+DataFusion retains conditions outside the exact predicate subset. Parquet live
+dynamic filters use cheap
 bounds, null checks, and short literal lists. DataFusion can represent live join
 filters using `CASE` and hash lookups; evaluating these for every scanned row can
 cost more than it saves when little is pruned. The provider declines that optional
 reader pushdown and retains DataFusion's join and residual checks. This does not
 skip SQL `CASE` evaluation required by the query. Vortex uses the native static
 predicate path and DataFusion residuals; the Parquet-specific live row-filter
-hook does not run on Vortex files. Live filters evaluate decoded Arrow batches;
-they do not currently turn arbitrary `CASE` expressions into metadata pruning.
+hook does not run on Vortex files. The Arrow reader evaluates live filters on
+decoded Arrow batches; it does not currently turn arbitrary `CASE` expressions
+into metadata pruning. Native Vortex scans delegate supported live expressions to
+the official Vortex adapter, which evaluates them over Vortex arrays.
 The Arrow-reader scan exposes output rows, compute time, bytes read, and dynamic
 pruning through DataFusion metrics. Native Vortex scans expose the official
 Vortex execution metrics, but do not report per-query or per-partition

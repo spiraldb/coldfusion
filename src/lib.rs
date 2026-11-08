@@ -101,15 +101,16 @@ impl IcebergTableProvider {
             table,
             schema,
             view_types,
-            vortex_layout_splits: false,
-            native_vortex_scan: false,
+            vortex_layout_splits: true,
+            native_vortex_scan: true,
             native_vortex_cache: OnceLock::new(),
-            exact_filter_pushdown: false,
+            exact_filter_pushdown: true,
             exact_filter_columns,
         })
     }
 
     /// Filters Vortex layout batches before slicing the Arrow output batches.
+    /// Enabled by default.
     pub fn with_vortex_layout_splits(mut self, enabled: bool) -> Self {
         self.vortex_layout_splits = enabled;
         self
@@ -117,6 +118,7 @@ impl IcebergTableProvider {
 
     /// Uses Vortex's native expression scan interface for supported Iceberg tasks.
     ///
+    /// Enabled by default.
     /// Unsupported schemas, deletes and partition specifications use the Arrow reader.
     /// Native scans expose Vortex execution metrics; the Arrow reader's per-partition
     /// `bytes_scanned` metric is unavailable because cached IO is shared across scans.
@@ -127,6 +129,7 @@ impl IcebergTableProvider {
 
     /// Removes residuals for supported predicates on required fields without defaults.
     ///
+    /// Enabled by default.
     /// Partitioned tables retain residuals because readers may synthesize partition
     /// values after filtering. Optional fields also retain residuals: an older file
     /// may omit them, and native readers can conservatively retain those rows.
