@@ -1125,7 +1125,25 @@ async fn assert_added_columns_and_empty_snapshots_keep_their_schema(format: Data
         .unwrap();
     fixture.table = table;
     fixture.evolve_field(1, |field| field.name = "renamed_label".to_owned());
-    let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
+    let provider = Arc::new(
+        IcebergTableProvider::try_new(fixture.table.clone())
+            .unwrap()
+            .with_exact_filter_pushdown(true),
+    );
+    for filter in [
+        col("new_column").is_null(),
+        col("new_column").is_not_null(),
+        col("defaulted").eq(lit(7_i32)),
+        col("renamed_label").like(lit("row-%")),
+    ] {
+        assert!(!matches!(
+            provider
+                .supports_filters_pushdown(&[&filter])
+                .unwrap()
+                .as_slice(),
+            [datafusion::logical_expr::TableProviderFilterPushDown::Exact]
+        ));
+    }
     let context = fixture.context();
     let projection = vec![6];
     let plan = provider
@@ -1144,6 +1162,14 @@ async fn assert_added_columns_and_empty_snapshots_keep_their_schema(format: Data
         (ROWS as usize, ROWS as usize)
     );
     context.register_table("evolved", provider.clone()).unwrap();
+    let missing = context
+        .sql("SELECT id FROM evolved WHERE new_column IS NOT NULL")
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    assert_eq!(missing.iter().map(RecordBatch::num_rows).sum::<usize>(), 0);
     for filter in [
         "defaulted = 7",
         "defaulted > 6",
@@ -1254,7 +1280,11 @@ async fn assert_added_columns_and_empty_snapshots_keep_their_schema(format: Data
 async fn promoted_integer_predicates_preserve_out_of_range_literals() {
     let mut fixture = Fixture::new_with_id_type(true, DataType::Int32).await;
     fixture.evolve_field(0, |field| *field.field_type = PrimitiveType::Long.into());
-    let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
+    let provider = Arc::new(
+        IcebergTableProvider::try_new(fixture.table.clone())
+            .unwrap()
+            .with_exact_filter_pushdown(true),
+    );
     let context = fixture.context();
     context
         .register_table("promoted", provider.clone())
@@ -1278,6 +1308,27 @@ async fn promoted_integer_predicates_preserve_out_of_range_literals() {
         20
     );
     assert_eq!(provider.schema().field(0).data_type(), &DataType::Int64);
+    assert!(!matches!(
+        provider
+            .supports_filters_pushdown(&[&col("id").lt(lit(2147483648_i64))])
+            .unwrap()
+            .as_slice(),
+        [datafusion::logical_expr::TableProviderFilterPushDown::Exact]
+    ));
+    for (filter, expected_rows) in [
+        (col("id").lt(lit(2147483648_i64)), ROWS as usize - 20),
+        (col("id").gt(lit(2147483648_i64)), 0),
+    ] {
+        let direct = provider
+            .scan(&context.state(), Some(&vec![1]), &[filter], None)
+            .await
+            .unwrap();
+        let batches = collect(direct, context.task_ctx()).await.unwrap();
+        assert_eq!(
+            batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+            expected_rows
+        );
+    }
     context
         .register_table(
             "reference",
@@ -1578,4 +1629,294 @@ async fn unsupported_data_formats_are_rejected_before_opening_files() {
         .unwrap_err();
     assert!(matches!(error, DataFusionError::NotImplemented(_)));
     assert!(!path.exists());
+}
+
+
+async fn exact_filter_fixture(format: DataFileFormat) -> Fixture {
+    use datafusion::arrow::array::{Date32Array, Decimal128Array};
+
+    let mut fixture = Fixture::new(false).await;
+    let mut fields = fixture
+        .batch
+        .schema()
+        .project(&[0, 1, 2])
+        .unwrap()
+        .fields()
+        .iter()
+        .map(|field| Arc::new(field.as_ref().clone().with_nullable(false)))
+        .collect::<Vec<_>>();
+    fields.extend([
+        Arc::new(Field::new("price", DataType::Decimal128(15, 2), false)),
+        Arc::new(Field::new("day", DataType::Date32, false)),
+        Arc::new(Field::new("special_float", DataType::Float64, true)),
+    ]);
+    let schema = arrow_schema_to_schema_auto_assign_ids(&Schema::new(fields)).unwrap();
+    fixture.table = fixture
+        .catalog
+        .create_table(
+            &NamespaceIdent::new("test".to_owned()),
+            TableCreation::builder()
+                .name("exact".to_owned())
+                .schema(schema)
+                .build(),
+        )
+        .await
+        .unwrap();
+    let schema =
+        Arc::new(schema_to_arrow_schema(fixture.table.metadata().current_schema()).unwrap());
+    fixture.batch = RecordBatch::try_new(schema, vec![
+        fixture.batch.column(0).clone(),
+        Arc::new(StringArray::from_iter_values(
+            (0..ROWS).map(|id| format!("row-{id}")),
+        )),
+        Arc::new(BooleanArray::from(
+            (0..ROWS).map(|id| id % 2 == 0).collect::<Vec<_>>(),
+        )),
+        Arc::new(
+            Decimal128Array::from_iter_values(
+                (0..ROWS).map(|id| i128::from(id % 101 - 50) * 100 + i128::from(id % 5)),
+            )
+            .with_precision_and_scale(15, 2)
+            .unwrap(),
+        ),
+        Arc::new(Date32Array::from_iter_values(
+            (0..ROWS).map(|id| (id % 31 - 15) as i32),
+        )),
+        fixture.batch.column(4).clone(),
+    ])
+    .unwrap();
+    fixture.data_path = format!("{}/exact.{format}", fixture.table.metadata().location());
+    let path = fixture.data_path.clone();
+    let batch = fixture.batch.clone();
+    fixture.write_batch(&path, format, &batch).await;
+    fixture
+}
+
+
+#[tokio::test]
+async fn exact_filters_enforce_required_decimal_date_predicates_without_residuals() {
+    use datafusion::logical_expr::TableProviderFilterPushDown;
+
+    for (first, second) in [
+        (DataFileFormat::Parquet, None),
+        (DataFileFormat::Vortex, None),
+        (DataFileFormat::Parquet, Some(DataFileFormat::Vortex)),
+    ] {
+        let mut fixture = exact_filter_fixture(first).await;
+        let mut reference = vec![fixture.batch.clone()];
+        if let Some(second) = second {
+            let mut columns = fixture.batch.columns().to_vec();
+            columns[0] = Arc::new(Int64Array::from_iter_values(ROWS..ROWS * 2));
+            let extra = RecordBatch::try_new(fixture.batch.schema(), columns).unwrap();
+            let path = format!("{}/extra.{second}", fixture.table.metadata().location());
+            fixture.write_batch(&path, second, &extra).await;
+            reference.push(extra);
+        }
+        fixture.add_deletes().await;
+        let removed = [0, 31, 32, 97, 128, 255, 256];
+        let mask = BooleanArray::from_iter((0..ROWS).map(|id| Some(!removed.contains(&id))));
+        reference[0] =
+            datafusion::arrow::compute::filter_record_batch(&fixture.batch, &mask).unwrap();
+        fixture.evolve_field(1, |field| field.name = "renamed_label".to_owned());
+        let schema =
+            Arc::new(schema_to_arrow_schema(fixture.table.metadata().current_schema()).unwrap());
+        let reference = reference
+            .into_iter()
+            .map(|batch| RecordBatch::try_new(schema.clone(), batch.columns().to_vec()).unwrap())
+            .collect();
+        let provider = Arc::new(
+            IcebergTableProvider::try_new(fixture.table.clone())
+                .unwrap()
+                .with_exact_filter_pushdown(true),
+        );
+        let context = fixture.context();
+        context.register_table("ice", provider.clone()).unwrap();
+        context
+            .register_table(
+                "reference",
+                Arc::new(MemTable::try_new(schema, vec![reference]).unwrap()),
+            )
+            .unwrap();
+        let price = lit(ScalarValue::Decimal128(Some(-500), 15, 2));
+        let day = lit(ScalarValue::Date32(Some(-5)));
+        for filter in [
+            col("price")
+                .gt(price.clone())
+                .and(col("day").gt_eq(day.clone())),
+            col("price").lt_eq(price).or(col("day").gt(day)),
+            col("day").in_list(
+                vec![
+                    lit(ScalarValue::Date32(Some(-1))),
+                    lit(ScalarValue::Date32(Some(1))),
+                ],
+                false,
+            ),
+            col("price").is_null().or(col("day").is_not_null()),
+            col("renamed_label").like(lit("row-1%")),
+            col("flag").eq(lit(true)),
+        ] {
+            assert!(matches!(
+                provider
+                    .supports_filters_pushdown(&[&filter])
+                    .unwrap()
+                    .as_slice(),
+                [TableProviderFilterPushDown::Exact]
+            ));
+            let direct = provider
+                .scan(
+                    &context.state(),
+                    Some(&vec![0]),
+                    std::slice::from_ref(&filter),
+                    None,
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                direct
+                    .schema()
+                    .fields()
+                    .iter()
+                    .map(|field| field.name().as_str())
+                    .collect::<Vec<_>>(),
+                vec!["id"]
+            );
+            let actual = collect(direct, context.task_ctx()).await.unwrap();
+            let expected = context
+                .table("reference")
+                .await
+                .unwrap()
+                .filter(filter.clone())
+                .unwrap()
+                .select(vec![col("id")])
+                .unwrap()
+                .collect()
+                .await
+                .unwrap();
+            let ids = |batches: &[RecordBatch]| {
+                let mut values = batches
+                    .iter()
+                    .flat_map(|batch| {
+                        batch
+                            .column(0)
+                            .as_any()
+                            .downcast_ref::<Int64Array>()
+                            .unwrap()
+                            .values()
+                            .to_vec()
+                    })
+                    .collect::<Vec<_>>();
+                values.sort_unstable();
+                values
+            };
+            assert_eq!(ids(&actual), ids(&expected), "direct {first:?}: {filter}");
+            let plan = context
+                .table("ice")
+                .await
+                .unwrap()
+                .filter(filter.clone())
+                .unwrap()
+                .select(vec![col("id")])
+                .unwrap()
+                .create_physical_plan()
+                .await
+                .unwrap();
+            let display = displayable(plan.as_ref()).indent(true).to_string();
+            assert!(!display.contains("FilterExec"), "{display}");
+            let mut nodes = vec![plan.clone()];
+            while let Some(node) = nodes.pop() {
+                if node.name() == "IcebergScan" {
+                    assert_eq!(node.schema().fields().len(), 1, "{display}");
+                }
+                nodes.extend(node.children().into_iter().cloned());
+            }
+            let actual = collect(plan, context.task_ctx()).await.unwrap();
+            assert_eq!(ids(&actual), ids(&expected), "planned {first:?}: {filter}");
+        }
+        for filter in [
+            col("id").not_eq(lit(5_i64)),
+            col("id").in_list(vec![lit(5_i64)], true),
+            col("renamed_label").not_like(lit("row-%")),
+            col("special_float").gt(lit(0.0_f64)),
+        ] {
+            assert!(!matches!(
+                provider
+                    .supports_filters_pushdown(&[&filter])
+                    .unwrap()
+                    .as_slice(),
+                [TableProviderFilterPushDown::Exact]
+            ));
+        }
+    }
+}
+
+
+#[tokio::test]
+async fn historical_partition_specs_keep_exact_filters_residual() {
+    use datafusion::logical_expr::TableProviderFilterPushDown;
+    use iceberg::spec::{Transform, UnboundPartitionField, UnboundPartitionSpec};
+
+    let fixture = Fixture::new(false).await;
+    let filter = col("id").eq(lit(5_i64));
+    let provider = IcebergTableProvider::try_new(fixture.table.clone())
+        .unwrap()
+        .with_exact_filter_pushdown(true);
+    assert!(matches!(
+        provider
+            .supports_filters_pushdown(&[&filter])
+            .unwrap()
+            .as_slice(),
+        [TableProviderFilterPushDown::Exact]
+    ));
+    let old_spec = UnboundPartitionSpec::builder()
+        .add_partition_field(
+            UnboundPartitionField::builder()
+                .source_ids(vec![
+                    fixture
+                        .table
+                        .metadata()
+                        .current_schema()
+                        .field_by_name("id")
+                        .unwrap()
+                        .id,
+                ])
+                .name("id_partition")
+                .transform(Transform::Identity)
+                .build()
+                .unwrap(),
+        )
+        .unwrap()
+        .build();
+    let metadata = fixture
+        .table
+        .metadata()
+        .clone()
+        .into_builder(fixture.table.metadata_location().map(str::to_owned))
+        .add_partition_spec(old_spec)
+        .unwrap()
+        .build()
+        .unwrap()
+        .metadata;
+    assert!(metadata.default_partition_spec().fields().is_empty());
+    assert!(
+        metadata
+            .partition_specs_iter()
+            .any(|spec| !spec.fields().is_empty())
+    );
+    let table = Table::builder()
+        .metadata(metadata)
+        .identifier(fixture.table.identifier().clone())
+        .file_io(fixture.table.file_io().clone())
+        .runtime(Runtime::current())
+        .build()
+        .unwrap();
+    let provider = IcebergTableProvider::try_new(table)
+        .unwrap()
+        .with_exact_filter_pushdown(true);
+    assert!(matches!(
+        provider
+            .supports_filters_pushdown(&[&filter])
+            .unwrap()
+            .as_slice(),
+        [TableProviderFilterPushDown::Inexact]
+    ));
 }

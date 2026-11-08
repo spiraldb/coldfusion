@@ -24,6 +24,103 @@ pub(crate) fn predicate(expr: &Expr, schema: &Schema) -> Option<Predicate> {
     convert(expr, schema, true)
 }
 
+pub(crate) fn exact_predicate(expr: &Expr, schema: &Schema) -> Option<Predicate> {
+    if !exact_expression(expr, schema) {
+        return None;
+    }
+    convert(expr, schema, false)
+}
+
+fn exact_expression(expr: &Expr, schema: &Schema) -> bool {
+    match expr {
+        Expr::BinaryExpr(binary) if matches!(binary.op, Operator::And | Operator::Or) => {
+            exact_expression(&binary.left, schema) && exact_expression(&binary.right, schema)
+        }
+        Expr::BinaryExpr(binary)
+            if matches!(
+                binary.op,
+                Operator::Eq | Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq
+            ) =>
+        {
+            exact_comparison(&binary.left, &binary.right, schema)
+                || exact_comparison(&binary.right, &binary.left, schema)
+        }
+        Expr::Column(_) => matches!(exact_type(expr, schema), Some(PrimitiveType::Boolean)),
+        Expr::IsNull(column) | Expr::IsNotNull(column) => exact_type(column, schema).is_some(),
+        Expr::Between(between) if !between.negated => {
+            exact_comparison(&between.expr, &between.low, schema)
+                && exact_comparison(&between.expr, &between.high, schema)
+        }
+        Expr::InList(list) if !list.negated && !list.list.is_empty() => list
+            .list
+            .iter()
+            .all(|value| exact_comparison(&list.expr, value, schema)),
+        Expr::Like(like) if !like.negated => {
+            matches!(exact_type(&like.expr, schema), Some(PrimitiveType::String))
+        }
+        _ => false,
+    }
+}
+
+fn exact_type<'a>(expr: &Expr, schema: &'a Schema) -> Option<&'a PrimitiveType> {
+    let Expr::Column(column) = expr else {
+        return None;
+    };
+    let field = schema
+        .as_struct()
+        .fields()
+        .iter()
+        .find(|field| field.name == column.name)?;
+    if !field.required || field.initial_default.is_some() {
+        return None;
+    }
+    match field.field_type.as_ref() {
+        Type::Primitive(primitive)
+            if matches!(
+                primitive,
+                PrimitiveType::Boolean
+                    | PrimitiveType::Int
+                    | PrimitiveType::Long
+                    | PrimitiveType::Decimal { .. }
+                    | PrimitiveType::Date
+                    | PrimitiveType::String
+            ) =>
+        {
+            Some(primitive)
+        }
+        _ => None,
+    }
+}
+
+fn exact_comparison(column: &Expr, value: &Expr, schema: &Schema) -> bool {
+    let Some(primitive) = exact_type(column, schema) else {
+        return false;
+    };
+    let Some(value) = scalar(value) else {
+        return false;
+    };
+    match (primitive, value) {
+        (PrimitiveType::Boolean, ScalarValue::Boolean(Some(_)))
+        | (PrimitiveType::Int | PrimitiveType::Long, ScalarValue::Int8(Some(_)))
+        | (PrimitiveType::Int | PrimitiveType::Long, ScalarValue::Int16(Some(_)))
+        | (PrimitiveType::Int | PrimitiveType::Long, ScalarValue::Int32(Some(_)))
+        | (PrimitiveType::Long, ScalarValue::Int64(Some(_)))
+        | (PrimitiveType::Date, ScalarValue::Date32(Some(_)))
+        | (PrimitiveType::String, ScalarValue::Utf8(Some(_)))
+        | (PrimitiveType::String, ScalarValue::Utf8View(Some(_)))
+        | (PrimitiveType::String, ScalarValue::LargeUtf8(Some(_))) => true,
+        (PrimitiveType::Int, ScalarValue::Int64(Some(value))) => i32::try_from(value).is_ok(),
+        (
+            PrimitiveType::Decimal { precision, scale },
+            ScalarValue::Decimal128(Some(value), _, literal_scale),
+        ) => {
+            i8::try_from(*scale).ok() == Some(literal_scale)
+                && value.unsigned_abs() < 10_u128.pow(*precision)
+        }
+        _ => false,
+    }
+}
+
 fn convert(expr: &Expr, schema: &Schema, partial_conjunction: bool) -> Option<Predicate> {
     match expr {
         Expr::BinaryExpr(binary) if binary.op == Operator::And => {
@@ -231,6 +328,7 @@ mod tests {
             col("floating").is_not_null(),
         ] {
             assert_eq!(super::predicate(&unsupported, &schema), None);
+            assert_eq!(super::exact_predicate(&unsupported, &schema), None);
             assert_eq!(
                 super::predicate(&safe.clone().and(unsupported.clone()), &schema),
                 Some(Reference::new("a").greater_than(Datum::int(4)))
@@ -254,6 +352,10 @@ mod tests {
         assert_eq!(
             predicate(&supported.clone().and(unsupported.clone())),
             expected
+        );
+        assert_eq!(
+            super::exact_predicate(&supported.clone().and(unsupported.clone()), &schema()),
+            None
         );
         assert_eq!(predicate(&supported.clone().or(unsupported.clone())), None);
         assert_eq!(
@@ -294,6 +396,26 @@ mod tests {
             predicate(&col("price").eq(lit(ScalarValue::Decimal128(Some(-12345), 12, 3)))),
             Some(Reference::new("price").equal_to(Datum::decimal_from_str("-12.345").unwrap()))
         );
+    }
+
+    #[test]
+    fn negated_between_keeps_an_exactness_residual() {
+        let schema = Schema::builder()
+            .with_fields(vec![
+                NestedField::required(1, "id", PrimitiveType::Int.into()).into(),
+            ])
+            .build()
+            .unwrap();
+        for negated in [false, true] {
+            let range = Expr::Between(Between::new(
+                Box::new(col("id")),
+                negated,
+                Box::new(lit(1_i32)),
+                Box::new(lit(10_i32)),
+            ));
+            assert!(super::predicate(&range, &schema).is_some());
+            assert_eq!(super::exact_predicate(&range, &schema).is_some(), !negated);
+        }
     }
 
     #[test]

@@ -21,6 +21,7 @@ mod predicate;
 mod scan;
 mod statistics;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -42,14 +43,60 @@ use iceberg::table::Table;
 pub struct IcebergTableProvider {
     table: Table,
     schema: SchemaRef,
+    exact_filter_pushdown: bool,
+    exact_filter_columns: HashSet<String>,
 }
 
 impl IcebergTableProvider {
     /// Creates a provider for the current schema and snapshot of `table`.
     pub fn try_new(table: Table) -> Result<Self> {
+        // Required fields without initial defaults must be physically present in
+        // valid Iceberg files. Check history by ID so renames retain eligibility.
+        let exact_filter_columns = if table
+            .metadata()
+            .partition_specs_iter()
+            .all(|spec| spec.fields().is_empty())
+        {
+            table
+                .metadata()
+                .current_schema()
+                .as_struct()
+                .fields()
+                .iter()
+                .filter(|field| {
+                    table.metadata().schemas_iter().all(|schema| {
+                        schema
+                            .as_struct()
+                            .field_by_id(field.id)
+                            .is_some_and(|historical| {
+                                historical.required && historical.initial_default.is_none()
+                            })
+                    })
+                })
+                .map(|field| field.name.clone())
+                .collect()
+        } else {
+            HashSet::new()
+        };
         let schema =
             Arc::new(schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?);
-        Ok(Self { table, schema })
+        Ok(Self {
+            table,
+            schema,
+            exact_filter_pushdown: false,
+            exact_filter_columns,
+        })
+    }
+
+    /// Removes residuals for supported predicates on required fields without defaults.
+    ///
+    /// Partitioned tables retain residuals because readers may synthesize partition
+    /// values after filtering. Optional fields also retain residuals: an older file
+    /// may omit them, and native readers can conservatively retain those rows.
+    /// This policy trusts valid Iceberg files and their field-ID or name mappings.
+    pub fn with_exact_filter_pushdown(mut self, enabled: bool) -> Self {
+        self.exact_filter_pushdown = enabled;
+        self
     }
 }
 
@@ -113,7 +160,18 @@ impl TableProvider for IcebergTableProvider {
         Ok(filters
             .iter()
             .map(|expr| {
-                if predicate::predicate(expr, self.table.metadata().current_schema()).is_some() {
+                if self.exact_filter_pushdown
+                    && expr
+                        .column_refs()
+                        .iter()
+                        .all(|column| self.exact_filter_columns.contains(column.name.as_str()))
+                    && predicate::exact_predicate(expr, self.table.metadata().current_schema())
+                        .is_some()
+                {
+                    TableProviderFilterPushDown::Exact
+                } else if predicate::predicate(expr, self.table.metadata().current_schema())
+                    .is_some()
+                {
                     TableProviderFilterPushDown::Inexact
                 } else {
                     TableProviderFilterPushDown::Unsupported
