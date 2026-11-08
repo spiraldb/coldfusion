@@ -1,0 +1,240 @@
+{
+  "publication_status": "Final committed full-seven results included; exploratory factor evidence remains separately scoped.",
+  "review_summary": "All 12 listed retained commits are CLEAR in the designated review record. Review is distinct from benchmark isolation.",
+  "commits": [
+    {
+      "repository": "spiraldb/iceberg-rust",
+      "series": "native",
+      "commit": "f00af1ca5cac3d1170b740edbd6187410294f22b",
+      "short_commit": "f00af1ca",
+      "title": "Align the native Vortex reader with the Arbor revision",
+      "change": "Match the Arbor Vortex revision",
+      "why_needed": "Moves the native reader/writer to Git Vortex 7d003295 and adapts the affected UUID/session/statistics APIs. This removes reader-version drift from the comparison.",
+      "benchmark_or_validation": "Revision alignment and correctness coverage; no standalone speedup measured.",
+      "evidence_id": "alignment",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    },
+    {
+      "repository": "spiraldb/iceberg-rust",
+      "series": "native",
+      "commit": "71886fef5be41f4f5b882c9fbab3ba12df17fccd",
+      "short_commit": "71886fef",
+      "title": "Filter Vortex layout batches before limiting Arrow output",
+      "change": "Filter layout batches before Arrow slicing",
+      "why_needed": "Keeps Vortex input work aligned with file layout, then enforces the requested Arrow output batch limit; also preserves optional view output.",
+      "benchmark_or_validation": "Layout toggle: 1.42x derived rate in a five-query paired SF10 screen only.",
+      "evidence_id": "layout",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": true
+    },
+    {
+      "repository": "spiraldb/iceberg-rust",
+      "series": "native",
+      "commit": "0038736e653c21694a544fc1ca42b987a78364d3",
+      "short_commit": "0038736e",
+      "title": "Expose supported Iceberg Vortex tasks as a native array source",
+      "change": "Expose a generic Vortex array source",
+      "why_needed": "Lets supported Iceberg tasks retain native projections and predicates until Arrow export, with parallel ranges/selections/limits and whole-scan fallback. This is an integration API, not a DataFusion dependency in Iceberg.",
+      "benchmark_or_validation": "Part of the 1.182x full 22-query native-source bundle; not isolated from cache/adapter changes.",
+      "evidence_id": "native_bundle",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    },
+    {
+      "repository": "spiraldb/iceberg-rust",
+      "series": "native",
+      "commit": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
+      "short_commit": "3a409b31",
+      "title": "Reuse opened Vortex files on the table IO runtime",
+      "change": "Reuse immutable file handles on Table IO",
+      "why_needed": "Caches up to 128 opened immutable Vortex files while keeping predicate/pruning state query-local. Explicit Table IO ownership preserves driver lifetime when plans move between runtimes.",
+      "benchmark_or_validation": "Included in the native-source bundle; no cache-only timing claim. Runtime/lifetime and cache correctness tests support it.",
+      "evidence_id": "native_bundle",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    },
+    {
+      "repository": "spiraldb/coldfusion",
+      "series": "public",
+      "commit": "e9b8dfeaabfe1369a8ac2803d4fca20fdd2057d8",
+      "short_commit": "e9b8dfe",
+      "title": "Remove redundant residuals for fully enforced Iceberg predicates",
+      "change": "Remove fully redundant residual filters",
+      "why_needed": "Certifies only complete approved predicates on required, default-free fields across schema history and unpartitioned history. DataFusion can then omit duplicate evaluation and hidden filter-only output columns.",
+      "benchmark_or_validation": "Paired full 22-query Exact toggle: +2.8% Zstd and +3.8% LZ4_RAW derived rate.",
+      "evidence_id": "exact",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": true
+    },
+    {
+      "repository": "spiraldb/coldfusion",
+      "series": "public",
+      "commit": "33141777e97cf681da21f9871f2494d2b6ce3fbb",
+      "short_commit": "3314177",
+      "title": "Support consistent view types and Vortex layout batches",
+      "change": "Expose consistent views and layout controls",
+      "why_needed": "Adds optional stable Arrow view types across both formats and forwards layout batching. Canonical output remains the selected default; matching native/dev Vortex pins preserve compatibility.",
+      "benchmark_or_validation": "Layout evidence is the five-query screen. View types remain opt-in; measurements did not justify enabling them globally.",
+      "evidence_id": "views_layout",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    },
+    {
+      "repository": "spiraldb/coldfusion",
+      "series": "public",
+      "commit": "2147877f642470403f7a0f730d65aeec5e7b797f",
+      "short_commit": "2147877",
+      "title": "Use native Vortex expressions for supported Iceberg scans",
+      "change": "Bridge the official DataFusion Vortex source",
+      "why_needed": "Connects the generic native API to DataFusion projection/filter pushdown and shared scan scheduling. Conservative conversion leaves incompatible semantics in DataFusion and permits only proved decimal arithmetic.",
+      "benchmark_or_validation": "Supported by the 1.182x paired full 22-query native-source bundle and real-file correctness tests; not a per-hunk timing attribution.",
+      "evidence_id": "native_bundle",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    },
+    {
+      "repository": "spiraldb/coldfusion",
+      "series": "public",
+      "commit": "e619fb925bc30c8be372945aa0a98d2639487eae",
+      "short_commit": "e619fb9",
+      "title": "Publish the reviewed native scan patch extension",
+      "change": "Publish the reproducible native patch extension",
+      "why_needed": "Exports the four new native commits alongside the original nine, with ordered replay hashes and correctly scoped historical tree-equality proof.",
+      "benchmark_or_validation": "Reproducibility and packaging; no runtime speedup attributed.",
+      "evidence_id": "reproducibility",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    },
+    {
+      "repository": "spiraldb/coldfusion",
+      "series": "public",
+      "commit": "cc724bfe920723533ccb4677da64f7faaacfd4d4",
+      "short_commit": "cc724bf",
+      "title": "Enable benchmarked exact filters and native Vortex scans",
+      "change": "Select the benchmarked defaults",
+      "why_needed": "Enables Exact predicates, Vortex layout batching and the supported native Vortex path. Canonical Arrow output stays default; unsupported tables retain the existing reader fallback.",
+      "benchmark_or_validation": "Selects configurations supported by the Exact/layout/native studies. Default activation is validated together with the following parallelism guard.",
+      "evidence_id": "defaults",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    },
+    {
+      "repository": "spiraldb/coldfusion",
+      "series": "public",
+      "commit": "98ec669d786f2fb0d72d8b95b94469b846f191e0",
+      "short_commit": "98ec669",
+      "title": "Preserve parallel Vortex outputs under limit and sort rewrites",
+      "change": "Preserve parallel scans through optimizer rewrites",
+      "why_needed": "Keeps at least two source output partitions under limit/sort/fetch rewrites; global ordering and limits remain in DataFusion. This closes a gap in the consumer parallelism contract.",
+      "benchmark_or_validation": "Correctness/plan regression coverage for target counts 1 and 4; no standalone throughput claim. Included in the final committed executable.",
+      "evidence_id": "parallel_contract",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    },
+    {
+      "repository": "spiraldb/spiraldb",
+      "series": "private",
+      "commit": "da6dac249d9c425bd9f6241c3a471c00d18ff0a5",
+      "short_commit": "da6dac249d",
+      "title": "Pin ColdFusion to native Vortex scan integration",
+      "change": "Pin the benchmark consumer to the native bridge",
+      "why_needed": "Updates the harness dependency and lock graph to the reviewed public/native integration while preserving unrelated Apache Iceberg and DataFusion pins.",
+      "benchmark_or_validation": "Dependency alignment for matched runs; not individually benchmarked.",
+      "evidence_id": "harness",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    },
+    {
+      "repository": "spiraldb/spiraldb",
+      "series": "private",
+      "commit": "2c44c06ba6e132d8e76d97ab1f3635ad51427048",
+      "short_commit": "2c44c06ba",
+      "title": "Expose ColdFusion scan controls in benchmark runner",
+      "change": "Expose benchmark controls and settling",
+      "why_needed": "Adds explicit scan-option controls and untimed post-preparation settling, allowing reproducible on/off comparisons with the existing Arbor and Iceberg lanes.",
+      "benchmark_or_validation": "Enables controlled factors and the final full-seven run; instrumentation is not itself an attributed speedup.",
+      "evidence_id": "harness",
+      "review_status": "CLEAR",
+      "configuration_has_factor_timing": false
+    }
+  ],
+  "evidence": {
+    "exact": {
+      "cohort": "factor-v2-exact-filter-20261108T070943Z",
+      "suite_queries": 22,
+      "paired_orders": 2,
+      "samples_per_query_per_order": 5,
+      "answer_checks": 264,
+      "primary_metric": "Average across two runs of the sum of per-query arithmetic sample means",
+      "zstd_rate_ratio": 1.0277764911702663,
+      "lz4_raw_rate_ratio": 1.0381406081065134
+    },
+    "layout": {
+      "cohort": "factor-vortex-layout-20261108T064321Z",
+      "suite_queries": 5,
+      "queries": [
+        6,
+        12,
+        15,
+        19,
+        21
+      ],
+      "paired_orders": 2,
+      "primary_rate_ratio": 1.4154179815513253,
+      "full_suite_claim": false
+    },
+    "native_bundle": {
+      "cohort": "factor-v2-native-vortex-20261108T084943Z",
+      "suite_queries": 22,
+      "paired_orders": 2,
+      "samples_per_query_per_order": 5,
+      "answer_checks": 176,
+      "primary_rate_ratio": 1.1820498840661025,
+      "timing_isolation": "Whole native-source versus Arrow-reader configuration; no allocation between native API, cache, converter, adapter, or individual commits."
+    },
+    "views_layout": {
+      "views_default": false,
+      "reason": "Views remain available as an opt-in capability; measured workload behavior did not justify a global view default. Layout screen evidence is recorded separately."
+    },
+    "alignment": {
+      "independent_timing": false
+    },
+    "reproducibility": {
+      "independent_timing": false
+    },
+    "defaults": {
+      "independent_timing": false
+    },
+    "parallel_contract": {
+      "independent_timing": false
+    },
+    "harness": {
+      "independent_timing": false
+    }
+  },
+  "native_patch_counts": {
+    "existing": 9,
+    "extension": 4,
+    "total": 13
+  },
+  "final_executable": {
+    "sha256": "07f53ac24bbb517264808abf0827c70364a99a0a19a85e9e71a249154155389d",
+    "coldfusion_commit": "98ec669d786f2fb0d72d8b95b94469b846f191e0",
+    "native_commit": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
+    "benchmark_consumer_commit": "2c44c06ba6e132d8e76d97ab1f3635ad51427048",
+    "final_seven_results": {
+      "cohort": "final-seven",
+      "status": "passed",
+      "exact_query_checks": 198,
+      "timed_samples": 990,
+      "result_file": "final-seven.json",
+      "source_report_sha256": "82c7290894c6ede18788d0f2fdc5e8306a8ec65e0ec6d0a05d99320a24f215f0"
+    }
+  },
+  "rejected_experiments_shipped": false,
+  "pull_requests": {
+    "public": "https://github.com/spiraldb/coldfusion/pull/2",
+    "benchmark_harness": "https://github.com/spiraldb/spiraldb/pull/9833"
+  }
+}

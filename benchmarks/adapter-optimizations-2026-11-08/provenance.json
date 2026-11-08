@@ -1,0 +1,83 @@
+{
+  "source_identity": "Exact clean committed revisions of the final executable; no exploratory working-tree snapshot or dependency overrides.",
+  "binary_sha256": "07f53ac24bbb517264808abf0827c70364a99a0a19a85e9e71a249154155389d",
+  "source_commits": {
+    "coldfusion": "98ec669d786f2fb0d72d8b95b94469b846f191e0",
+    "iceberg_rust": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
+    "benchmark_harness": "2c44c06ba6e132d8e76d97ab1f3635ad51427048"
+  },
+  "source_trees": {
+    "coldfusion": "95755157efdd55e559aff19bef70988da9fbf1d1",
+    "native": "f0b51c91eacc9a986d1528f934d7f0343ebf823e",
+    "spiral": "2fda33928db399b278909d84656b8d10fdfb7336"
+  },
+  "all_three_source_repositories_clean_when_preserved": true,
+  "committed_manifest_hashes": {
+    "coldfusion": {
+      "Cargo.toml": "a74d85f2785f2eb03102ca1a0396fff4433a8dc6f3738500ad118f6752c32f37",
+      "Cargo.lock": "2b7a56f36849c82eedd57ebe542100f0473873564fe5ebe3df6499137530081d"
+    },
+    "native": {
+      "Cargo.toml": "675066fe1f6d86a0d074882f823ef34c51fd701d88ee34c200897f43d33cb7f2",
+      "Cargo.lock": "935cdcd75f2229f2ce3287ddd2cd543745d91cfad0564bde6b8dda413334d3fb"
+    },
+    "spiral": {
+      "Cargo.toml": "0d58e38c5ccd6fe4a89154e7e108bc36e353db4a8d71cf617d7f619ce0bec001",
+      "Cargo.lock": "bb396279c6dc070fa35815ed3eb9532e9d6978ee8ddc618b2fb661dce5b6edea"
+    }
+  },
+  "locked_build": true,
+  "profile": "bench",
+  "features": [
+    "iceberg",
+    "coldfusion"
+  ],
+  "target_cpu": "native",
+  "cargo_version": "cargo 1.101.0-nightly (15be64aa0 2026-10-20)",
+  "rustc_version": "rustc 1.101.0-nightly (7189d39d9 2026-10-22)",
+  "toolchain": "nightly-2026-10-23",
+  "host": "aarch64-apple-darwin",
+  "operating_system": "macOS 27.0.1",
+  "build_log_sha256": "562124991af714838387621818c4bfa5d27fb497bcaa3d0468974fe4f1442fa1",
+  "source_provenance_sha256": "e51bcedd9a2f269f3456a4de1d9ab7e89d7d17c11e71d1ab72f05af4e8b6cf40",
+  "configuration_checks": {
+    "binary_sha256_matches_source_report": true,
+    "committed_locked_build_required": true,
+    "build_log_sha256_matches_source_report": true,
+    "compiled_sources_declared_committed": true,
+    "no_working_tree_snapshot": true,
+    "locked_build_command_recorded": true,
+    "successful_cargo_build": true,
+    "public_git_revisions_present_in_build_log": true
+  },
+  "symbol_uuid_status": "matching_symbols_preserved",
+  "binary_uuids": {
+    "arm64": "22255427-AEEB-3E97-8596-7E7F59858346"
+  },
+  "dwarf_sha256": {
+    "engine_bench": "e19b57d06aa7cc42a3bff0a72ccce91e0a6292365096357d9522b16d20776893"
+  },
+  "compiler_cache": {
+    "name": "kache",
+    "version": "kache 1.2.2",
+    "executable_sha256": "74501d894e27f0defec9facd2bc6975d63cdb8e775f6e39bc03cb754b470af05",
+    "cache_mode": "local-only",
+    "cargo_configuration_fingerprint_sha256": "54f82b098dee314aa072dab7a38a00ac3d64e8a7436754a6886307ffe6307d41"
+  },
+  "runner_script_sha256": "96f91bc8e2f4e132b416c3d22ddbb4c030e4feb90474c8d41940ad2bff4aa7d3",
+  "runner_dependency_script_hashes": {
+    "run_final_seven.py": "96f91bc8e2f4e132b416c3d22ddbb4c030e4feb90474c8d41940ad2bff4aa7d3",
+    "run_factor_v2.py": "352b2c61c68f6eb2c41a7724ce4853b18ea8ff133c1364f750cd59b6370b4aa3",
+    "run_experiment.py": "3e627c46569ca170ca364afb7592eedf382529c865422283484d95682726045f",
+    "run_cohort.py": "3c04f3adf58f6307ddd265d31d56b60cf06b21c06cd31d9c819710582033300d",
+    "run_ab.py": "347decfc24abe500ab280ada546b1885909b5c470e8419a9820ad7b291dad640"
+  },
+  "query_catalog_sha256": "fdd5a078acb116ba2859c06a44bc7a8cf0724b3ca610d7295a09c6d19053e695",
+  "final_report_sha256": "82c7290894c6ede18788d0f2fdc5e8306a8ec65e0ec6d0a05d99320a24f215f0",
+  "input_hashes_unchanged_after_cohort": true,
+  "public_dependency_pins": {
+    "coldfusion": "98ec669d786f2fb0d72d8b95b94469b846f191e0",
+    "iceberg_rust": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
+    "vortex": "7d003295d19d3ba14cbf22e3cc556f656851c2a4"
+  }
+}

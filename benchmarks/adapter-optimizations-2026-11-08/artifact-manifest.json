@@ -1,0 +1,106 @@
+{
+  "target_directory": "benchmarks/adapter-optimizations-2026-11-08",
+  "allowlist": [
+    "README.md",
+    "final-seven.json",
+    "per-query-means.json",
+    "per-query-means.md",
+    "cohorts.json",
+    "summary.json",
+    "measurements.jsonl",
+    "profiles.json",
+    "profile-notes.md",
+    "commit-series.json",
+    "commit-series.md",
+    "page-setting-contributors.json",
+    "page-setting-contributors.md",
+    "provenance.json",
+    "validation.json",
+    "validation.md",
+    "studies.md",
+    "artifact-manifest.json"
+  ],
+  "files": {
+    "README.md": {
+      "bytes": 5188,
+      "sha256": "0c0115f840ad02d2892c7329644768269fe389200cbe8dd0623ec12e8e79be81"
+    },
+    "final-seven.json": {
+      "bytes": 31793,
+      "sha256": "0e04d12faca04cee4b13d36e28adfcd3707d0cb8bd1ad5998556240f458ab5b0"
+    },
+    "per-query-means.json": {
+      "bytes": 16836,
+      "sha256": "e56abde922a3d29213d6aca46a960ba225a0ee43dc36111b3648bd48a8337870"
+    },
+    "per-query-means.md": {
+      "bytes": 2015,
+      "sha256": "6ff5523ea62b20a55c3dd3eae6995020654a45fec69353e661f5929ffe09b6ce"
+    },
+    "cohorts.json": {
+      "bytes": 241788,
+      "sha256": "99db37fab7bafabe2f8aa44b54fea4170e4ec069c059be4189d8d35751a253bc"
+    },
+    "summary.json": {
+      "bytes": 36887,
+      "sha256": "d0080e3cef663c4143821498f40b43b3376dfb8141340063a9cc2c011a9d0ade"
+    },
+    "measurements.jsonl": {
+      "bytes": 982506,
+      "sha256": "08c28254778db91be38a87afd3c20e300d972c9fc82264bae90de68b04ffcc97"
+    },
+    "profiles.json": {
+      "bytes": 16153,
+      "sha256": "98b92938a7ab4447842a85ae183e6f0a2f4ece57a5a5eec00ef0bf4501f803bf"
+    },
+    "profile-notes.md": {
+      "bytes": 2475,
+      "sha256": "0aa613c181205753fb8841b316c87607680111c6447f7d94f09ce6f94381f592"
+    },
+    "commit-series.json": {
+      "bytes": 12071,
+      "sha256": "812d4a0d31db756553117029fcba00dffdc57ade981e165573b357e03f8c8d5f"
+    },
+    "commit-series.md": {
+      "bytes": 7393,
+      "sha256": "9f6b3823bf4b9eb646b8cdbc561dd863b5ca093f390cd395fb78948efc42322c"
+    },
+    "page-setting-contributors.json": {
+      "bytes": 21589,
+      "sha256": "219675644c757e3240df98e5c3a77ec9ad793a6f6982c2e81b89667d668f9b3a"
+    },
+    "page-setting-contributors.md": {
+      "bytes": 2740,
+      "sha256": "efb259118a06186839cfbc49a8983bc09bf49e2ad0d045d126d38e95e8f6fa95"
+    },
+    "provenance.json": {
+      "bytes": 3909,
+      "sha256": "32ac7b681fb2d54a65168b9d72f37fde9382695df9e2559e1255a0916f2da62c"
+    },
+    "validation.json": {
+      "bytes": 1103,
+      "sha256": "99a6803eb015391489396539c771ca37a49d53490631a15755928c16880644e5"
+    },
+    "validation.md": {
+      "bytes": 934,
+      "sha256": "92684724f87b8a27a37e2fa588a36322f88f29916d90d45c8c7a03c4626a3816"
+    },
+    "studies.md": {
+      "bytes": 1690,
+      "sha256": "37c671b3d4ec62176fb6ee491b5b9256549c1b30f5e9fe4be684506e88e8a5a4"
+    }
+  },
+  "checks": {
+    "privacy_allowlist": "passed",
+    "cohorts": 10,
+    "exact_records": 1936,
+    "timed_samples": 9372,
+    "final_exact_records": 198,
+    "final_timed_samples": 990,
+    "per_query_matrix_rows": 22,
+    "per_query_matrix_lanes": 7,
+    "raw_sample_and_fraction_arithmetic_audit": "passed",
+    "final_compiled_sources_committed": true,
+    "exploratory_parent_snapshot_distinction": "retained"
+  }
+}
