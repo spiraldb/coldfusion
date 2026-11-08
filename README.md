@@ -50,6 +50,9 @@ the output partition count and available CPU count. Smaller query runtimes use
 the table's CPU executor with bounded prefetching and cancellation on consumer
 drop. Native Vortex scans use the official Vortex DataSource and are polled on
 DataFusion's workers, independently of that Arrow-reader offload policy.
+Native Vortex scans retain parallel outputs through optimizer rewrites. Limits
+and ordering stay above the scan in DataFusion rather than collapsing it to one
+output partition.
 
 The provider retains the loaded schema and snapshot. Construct another provider
 to observe catalog changes. Reads use Iceberg's field-ID projection, schema

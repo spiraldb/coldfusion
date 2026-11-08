@@ -16,6 +16,7 @@
 // under the License.
 
 mod convert;
+mod parallel;
 
 use std::num::NonZeroUsize;
 use std::sync::{Arc, OnceLock};
@@ -34,6 +35,7 @@ use vortex::session::VortexSession;
 use vortex_datafusion::v2::VortexDataSource;
 
 use self::convert::ConservativeExpressionConverter;
+use self::parallel::ParallelVortexSource;
 use crate::external;
 
 pub(crate) async fn try_scan(
@@ -81,5 +83,7 @@ pub(crate) async fn try_scan(
     let source = source.repartitioned(target, 0, None)?.ok_or_else(|| {
         DataFusionError::Internal("Vortex source must expose parallel scan partitions".into())
     })?;
-    Ok(Some(Arc::new(DataSourceExec::new(source))))
+    Ok(Some(Arc::new(DataSourceExec::new(
+        ParallelVortexSource::wrap(source)?,
+    ))))
 }

@@ -1941,6 +1941,153 @@ async fn native_vortex_decimal_arithmetic_matches_datafusion_at_precision_bounds
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_vortex_limits_keep_parallel_scan_outputs_after_optimization() {
+    use datafusion::arrow::compute::SortOptions;
+    use datafusion::config::ConfigOptions;
+    use datafusion::datasource::source::DataSourceExec;
+    use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
+    use datafusion::physical_plan::{ExecutionPlan, SortOrderPushdownResult};
+
+    fn assert_parallel_sources(plan: &dyn ExecutionPlan, config: &ConfigOptions) -> usize {
+        let mut sources = 0;
+        if let Some(scan) = plan.downcast_ref::<DataSourceExec>() {
+            let display = displayable(scan).indent(true).to_string();
+            assert!(display.contains("VortexScanSource"), "{display}");
+            assert!(
+                scan.properties().output_partitioning().partition_count() >= 2,
+                "{display}"
+            );
+            let source = scan.data_source();
+            assert!(source.with_fetch(Some(17)).is_none());
+            assert!(source.fetch().is_none());
+            assert!(source.repartitioned(1, 0, None).unwrap().is_none());
+            let order = vec![PhysicalSortExpr {
+                expr: Arc::new(Column::new("id", 0)),
+                options: SortOptions::default(),
+            }];
+            assert!(
+                source
+                    .repartitioned(4, 0, LexOrdering::new(order.clone()))
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(matches!(
+                source.try_pushdown_sort(&order).unwrap(),
+                SortOrderPushdownResult::Unsupported
+            ));
+            assert!(source.with_preserve_order(true).is_none());
+            // Physical filter rewrites must also retain the wrapper, rather than handing the
+            // optimizer an unguarded official source that can later collapse to one partition.
+            let filter: Arc<dyn PhysicalExpr> = Arc::new(BinaryExpr::new(
+                Arc::new(Column::new("id", 0)),
+                Operator::GtEq,
+                Arc::new(PhysicalLiteral::new(ScalarValue::Int64(Some(11)))),
+            ));
+            let pushed = source.try_pushdown_filters(vec![filter], config).unwrap();
+            assert!(matches!(pushed.filters.as_slice(), [PushedDown::Yes]));
+            let updated = pushed.updated_node.expect("native filter must push down");
+            assert!(updated.output_partitioning().partition_count() >= 2);
+            assert!(updated.with_fetch(Some(17)).is_none());
+            assert!(updated.repartitioned(1, 0, None).unwrap().is_none());
+            sources += 1;
+        }
+        sources
+            + plan
+                .children()
+                .into_iter()
+                .map(|child| assert_parallel_sources(child.as_ref(), config))
+                .sum::<usize>()
+    }
+
+    let fixture = flat_vortex_fixture().await;
+    for target in [1, 4] {
+        let context = SessionContext::new_with_config(
+            SessionConfig::new()
+                .with_target_partitions(target)
+                .with_batch_size(19),
+        );
+        context
+            .register_table(
+                "ice",
+                Arc::new(
+                    IcebergTableProvider::try_new(fixture.table.clone())
+                        .unwrap()
+                        .with_native_vortex_scan(true),
+                ),
+            )
+            .unwrap();
+        context
+            .register_table(
+                "reference",
+                Arc::new(
+                    MemTable::try_new(fixture.batch.schema(), vec![vec![fixture.batch.clone()]])
+                        .unwrap(),
+                ),
+            )
+            .unwrap();
+        for query in [
+            "SELECT id FROM {} LIMIT 17",
+            "SELECT id, special_float + 1.0 AS shifted FROM {} WHERE id >= 11 ORDER BY id LIMIT 17",
+        ] {
+            let plan = context
+                .sql(&query.replace("{}", "ice"))
+                .await
+                .unwrap()
+                .create_physical_plan()
+                .await
+                .unwrap();
+            assert_eq!(
+                assert_parallel_sources(plan.as_ref(), context.state().config_options()),
+                1
+            );
+            let display = displayable(plan.as_ref()).indent(true).to_string();
+            if query.contains("shifted") {
+                assert!(
+                    display
+                        .lines()
+                        .any(|line| line.contains("VortexScanSource") && line.contains("shifted")),
+                    "{display}"
+                );
+            }
+            let actual = collect(plan, context.task_ctx()).await.unwrap();
+            assert_eq!(actual.iter().map(RecordBatch::num_rows).sum::<usize>(), 17);
+            if query.contains("ORDER BY") {
+                let expected = context
+                    .sql(&query.replace("{}", "reference"))
+                    .await
+                    .unwrap()
+                    .collect()
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    pretty_format_batches(&actual).unwrap().to_string(),
+                    pretty_format_batches(&expected).unwrap().to_string()
+                );
+            } else {
+                // An unordered global LIMIT can select any distinct input rows.
+                let mut ids = actual
+                    .iter()
+                    .flat_map(|batch| {
+                        batch
+                            .column(0)
+                            .as_any()
+                            .downcast_ref::<Int64Array>()
+                            .unwrap()
+                            .values()
+                            .iter()
+                            .copied()
+                    })
+                    .collect::<Vec<_>>();
+                ids.sort_unstable();
+                ids.dedup();
+                assert_eq!(ids.len(), 17);
+                assert!(ids.iter().all(|id| (0..ROWS).contains(id)));
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn native_vortex_source_combines_selection_ranges_and_limits() {
     use std::num::NonZeroUsize;
 
