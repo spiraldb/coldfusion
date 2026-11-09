@@ -129,8 +129,9 @@ samples**. Each query has two warmups and five timed samples per process. Arbor
 runs bracket the five Iceberg configurations; their rows below average the two
 controls. SDK and direct Arbor mean sums drifted only 0.02% and 0.07% respectively.
 The shared Apple M3 Max has 14 CPUs and 96 GiB RAM; query workers and target
-partitions are 14, and the output batch size is 8192. Each prepared fixture settles
-for 60 seconds before warmups.
+partitions are 14, and the DataFusion batch-size setting is 8192. Actual output
+batch sizes can differ by adapter and were not measured. Each prepared fixture
+settles for 60 seconds before warmups.
 
 The primary metric is the sum of per-query arithmetic means. Derived query rate
 is `22 / sum(query mean seconds)`, not an official TPC-H throughput score. Query

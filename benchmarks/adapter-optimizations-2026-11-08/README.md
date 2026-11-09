@@ -27,7 +27,9 @@ Both Iceberg Vortex and Arbor use Git Vortex 7d003295 in this executable. ColdFu
 
 Reproduction identity: binary `07f53ac24bbb517264808abf0827c70364a99a0a19a85e9e71a249154155389d`, provider `98ec669`, native `3a409b31`, benchmark consumer `2c44c06ba`. Samples, means, medians, and counters were independently recomputed from sanitized raw records. No new measurement ran during this analysis.
 
-Configuration: SF10, 22 queries, 14 workers/partitions, batch 8192, 2 warmups and 5 timed samples/query, 60 seconds settling per prepared lane; SQL planning and collection timed, fixture preparation excluded. Local files and OS cache are uncontrolled.
+Configuration: SF10, 22 queries, 14 workers/partitions, DataFusion batch-size setting 8192, 2 warmups and 5 timed samples/query, 60 seconds settling per prepared lane; SQL planning and collection timed, fixture preparation excluded. Local files and OS cache are uncontrolled.
+
+The batch-size setting does not establish equal batching work. The SDK slices native arrays to the requested rows before Arrow conversion. The direct Vortex adapter converts native layout chunks, then DataFusion's `DataSourceExec` splits the resulting Arrow batches to the configured row limit. Both paths therefore bound final output batches, but conversion granularity can differ. Output batch-size distributions were not collected. These whole-configuration timings do not isolate the cost of batching or the SDK boundary.
 
 Final ColdFusion settings: Exact predicates ON, native Vortex scans ON, Vortex layout batching ON, canonical Arrow types (views OFF). The Parquet metadata-cache prototype was removed. DataFusion was not forked or modified; scan output retains at least two partitions under the tested optimizer rewrites.
 
