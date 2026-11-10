@@ -2536,7 +2536,7 @@ dependencies = [
 [[package]]
 name = "iceberg"
 version = "0.10.1"
-source = "git+https://github.com/spiraldb/iceberg-rust?rev=25bfc0fd1bd839db90cbaf7be65c5f3c34ea0eb4#25bfc0fd1bd839db90cbaf7be65c5f3c34ea0eb4"
+source = "git+https://github.com/spiraldb/iceberg-rust?rev=9ab632ff6795497dfbb509bcff8b935a2d117f44#9ab632ff6795497dfbb509bcff8b935a2d117f44"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2595,7 +2595,7 @@ dependencies = [
 [[package]]
 name = "iceberg-property-macro"
 version = "0.10.1"
-source = "git+https://github.com/spiraldb/iceberg-rust?rev=25bfc0fd1bd839db90cbaf7be65c5f3c34ea0eb4#25bfc0fd1bd839db90cbaf7be65c5f3c34ea0eb4"
+source = "git+https://github.com/spiraldb/iceberg-rust?rev=9ab632ff6795497dfbb509bcff8b935a2d117f44#9ab632ff6795497dfbb509bcff8b935a2d117f44"
 dependencies = [
  "proc-macro2",
  "quote",

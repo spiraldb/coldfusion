@@ -87,27 +87,28 @@ The Arrow-reader scan exposes output rows, compute time, bytes read, and dynamic
 pruning through DataFusion metrics. Native Vortex scans expose the official
 Vortex execution metrics, but do not report per-query or per-partition
 `bytes_scanned`: file handles and their IO counters are shared across scans.
-Byte statistics estimate projected Arrow output,
-independently of file compression. Arrow-reader scans (Parquet and Vortex
-fallback) expose top-level Int/Long column bounds from Iceberg manifests as
+Arrow-reader byte estimates describe projected Arrow output independently of
+file compression. Both Arrow-reader scans (Parquet and Vortex fallback) and
+native Vortex scans expose top-level Int/Long column bounds from Iceberg manifests as
 conservative scan statistics when every selected nonempty file supplies
 compatible bounds. Field IDs preserve these facts through renames and
 Int-to-Long promotion. Missing bounds remain unknown; distinct counts and null
 counts are not inferred. These bounds help DataFusion choose join order and
-build sides without additional Parquet metadata reads. Native Vortex scans do
-not currently expose these column bounds.
+build sides without additional payload or Parquet metadata reads.
 
 ## Iceberg patches
 
 The dependency starts from `spiraldb/iceberg-rust` main at
 `ea48146de861ee71d32ba747ca0d182ea7746ed1` and is pinned in `Cargo.toml`.
-The [15-patch series](patches/iceberg-rust/) contains nonempty native changes.
+The [16-patch series](patches/iceberg-rust/) contains nonempty native changes.
 Its first nine patches preserve the historical reader tree `930277e0`; four
 additional commits align Vortex with Arbor, improve input/output batching, expose
 a native array source, and reuse file metadata on the table IO runtime. A fifth
 exposes manifest bounds on scan tasks. A sixth reconciles integer predicate
 literals with the physical Vortex type, including signed/unsigned boundaries
-and null-preserving range simplification. The extended tip has its own tree and
+and null-preserving range simplification. A seventh shares footer-to-manifest
+metrics for file imports and exposes conservative integer bounds through the native
+Vortex source; missing statistics remain unknown. The extended tip has its own tree and
 replay proof. Cancelling experiments and the obsolete native DataFusion adapter
 remain omitted.
 
