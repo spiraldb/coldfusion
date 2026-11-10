@@ -1,9 +1,9 @@
 repository https://github.com/spiraldb/iceberg-rust
-branch codex/scan-pushdown
+branch dk/q72-file-bounds
 base ea48146de861ee71d32ba747ca0d182ea7746ed1
-tip 3a409b3130cbe1fa945a6a00bd5c1ae86da0c315
-tree f0b51c91eacc9a986d1528f934d7f0343ebf823e
-patches 13
+tip 8a36a0802697a99fde598854d2e2bbfd7417f068
+tree 82d3b94dc33fdabe7db93516de5fa179acaf85ad
+patches 14
 compaction_tip 45376aebbfc5fa0ba94b18837cb2443eb87a68ae
 compaction_tree 7f9e7822a40c5bf67e711ac0d1cf755d23d17877
 historical_tip 930277e0209bec6ff321d06ae9b4a0f2e794000f

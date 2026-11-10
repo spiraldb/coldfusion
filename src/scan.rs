@@ -43,7 +43,7 @@ use iceberg::scan::FileScanTask;
 use iceberg::table::Table;
 
 use crate::external;
-use crate::statistics::output_bytes;
+use crate::statistics::{file_bounds, output_bytes};
 
 mod dynamic_filter;
 
@@ -97,6 +97,12 @@ impl IcebergScan {
         {
             statistics.num_rows = statistics.num_rows.to_inexact();
         }
+        file_bounds(
+            &mut statistics,
+            &schema,
+            table.metadata().current_schema(),
+            &tasks,
+        );
         output_bytes(&mut statistics, &schema);
         let target_bytes = total_bytes.div_ceil(partitions as u64).max(1);
         let mut groups = vec![Vec::new(); partitions];

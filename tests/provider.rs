@@ -1281,6 +1281,39 @@ async fn assert_added_columns_and_empty_snapshots_keep_their_schema(format: Data
 }
 
 #[tokio::test]
+async fn manifest_bounds_reach_projected_provider_statistics() {
+    let mut fixture = Fixture::new_with_id_type(true, DataType::Int32).await;
+    fixture.evolve_field(0, |field| {
+        field.name = "renamed_id".to_owned();
+        *field.field_type = PrimitiveType::Long.into();
+    });
+    let context = fixture.context();
+    let provider = IcebergTableProvider::try_new(fixture.table).unwrap();
+    let plan = provider
+        .scan(&context.state(), Some(&vec![1, 0]), &[], None)
+        .await
+        .unwrap();
+    let statistics = plan
+        .statistics_from_inputs(&[], &StatisticsArgs::new())
+        .unwrap();
+    assert_eq!(statistics.num_rows, Precision::Exact(ROWS as usize));
+    let label = &statistics.column_statistics[0];
+    assert_eq!(label.min_value, Precision::Absent);
+    assert_eq!(label.max_value, Precision::Absent);
+    let id = &statistics.column_statistics[1];
+    assert_eq!(
+        id.min_value,
+        Precision::Inexact(ScalarValue::Int64(Some(1)))
+    );
+    assert_eq!(
+        id.max_value,
+        Precision::Inexact(ScalarValue::Int64(Some(256)))
+    );
+    assert_eq!(id.distinct_count, Precision::Absent);
+    assert_eq!(id.null_count, Precision::Absent);
+}
+
+#[tokio::test]
 async fn promoted_integer_predicates_preserve_out_of_range_literals() {
     let mut fixture = Fixture::new_with_id_type(true, DataType::Int32).await;
     fixture.evolve_field(0, |field| *field.field_type = PrimitiveType::Long.into());

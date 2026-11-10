@@ -1,11 +1,11 @@
 {
   "repository": "https://github.com/spiraldb/iceberg-rust",
-  "branch": "codex/scan-pushdown",
+  "branch": "dk/q72-file-bounds",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
-  "tip_tree": "f0b51c91eacc9a986d1528f934d7f0343ebf823e",
-  "patch_count": 13,
+  "tip_commit": "8a36a0802697a99fde598854d2e2bbfd7417f068",
+  "tip_tree": "82d3b94dc33fdabe7db93516de5fa179acaf85ad",
+  "patch_count": 14,
   "patches": [
     {
       "patch": "0001-Split-Parquet-scans-using-physical-row-group-offsets.patch",
@@ -102,6 +102,12 @@
       "commit": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
       "subject": "Reuse opened Vortex files on the table IO runtime",
       "sha256": "57b1015d6cb3e11e32fe4eb39054470902df40f103380c3c62e6ff3b2ef7ff37"
+    },
+    {
+      "patch": "0014-Preserve-manifest-file-bounds-in-scan-tasks.patch",
+      "commit": "8a36a0802697a99fde598854d2e2bbfd7417f068",
+      "subject": "Preserve manifest file bounds in scan tasks",
+      "sha256": "69e66a5a3cbd4936bc17c4aaeb1f74e89fd242f6ca8ef5bab720d8d74fd6b776"
     }
   ],
   "compaction": {
@@ -226,13 +232,20 @@
   },
   "verification": {
     "method": "Sequential git apply --cached through an isolated Git index and object directory under ignored diagnostics, using native objects read-only as alternates; git write-tree matches each commit tree. No checkout, commits, shared index or native object writes.",
-    "verified_utc": "2026-11-08T08:29:14.433572+00:00",
-    "applied_tree": "f0b51c91eacc9a986d1528f934d7f0343ebf823e",
+    "verified_utc": "2026-11-10T16:40:29.958228+00:00",
+    "applied_tree": "82d3b94dc33fdabe7db93516de5fa179acaf85ad",
     "matches_tip_tree": true,
     "first_nine_applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
     "first_nine_match_historical_tree": true,
     "every_commit_nonempty": true,
     "exact_inverse_pairs": [],
     "repeated_boundary_trees": []
+  },
+  "metadata_bounds_extension": {
+    "base_commit": "3a409b3130cbe1fa945a6a00bd5c1ae86da0c315",
+    "tip_commit": "8a36a0802697a99fde598854d2e2bbfd7417f068",
+    "patch_count": 1,
+    "applied_tree": "82d3b94dc33fdabe7db93516de5fa179acaf85ad",
+    "matches_tip_tree": true
   }
 }
