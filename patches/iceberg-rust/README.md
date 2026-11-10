@@ -1,14 +1,14 @@
 # Iceberg Rust patch series
 
-These 14 patches contain the native Iceberg changes used by ColdFusion, based on
+These 15 patches contain the native Iceberg changes used by ColdFusion, based on
 `spiraldb/iceberg-rust` main. The provider remains in ColdFusion; this native
 workspace has no DataFusion dependency or adapter.
 
 - Repository: https://github.com/spiraldb/iceberg-rust
-- Branch: `dk/q72-file-bounds`
+- Branch: `dk/vortex-narrow-predicates`
 - Base: `ea48146de861ee71d32ba747ca0d182ea7746ed1`
-- Tip: `8a36a0802697a99fde598854d2e2bbfd7417f068`
-- Resulting tree: `82d3b94dc33fdabe7db93516de5fa179acaf85ad`
+- Tip: `25bfc0fd1bd839db90cbaf7be65c5f3c34ea0eb4`
+- Resulting tree: `1de96a29d863bb593ab20047d4ccbbf3ac51312a`
 
 The first nine patches preserve the previous compaction: their tree is exactly
 `7f9e7822a40c5bf67e711ac0d1cf755d23d17877`, matching the historical 25-commit tip
@@ -17,7 +17,8 @@ headers, checksums and manifest entries are unchanged. That equality applies to
 **the first nine patches**, not to this extended tip. Patches 10–13 intentionally
 change the Vortex dependency and reader behavior. Existing benchmark records keep
 the source revisions actually measured. Patch 14 preserves manifest bounds for
-consumers without changing native pruning or decoding.
+consumers without changing native pruning or decoding. Patch 15 narrows integer filter
+literals to the physical Vortex type and folds out-of-domain comparisons.
 
 Apply every numbered patch in lexical order to a clean checkout of the base:
 
@@ -29,7 +30,7 @@ done
 git write-tree
 ```
 
-The resulting tree must be `82d3b94dc33fdabe7db93516de5fa179acaf85ad`. Verification replayed all 14 patches and the
+The resulting tree must be `1de96a29d863bb593ab20047d4ccbbf3ac51312a`. Verification replayed all 15 patches and the
 four-patch extension separately through isolated Git indexes and object stores.
 Each intermediate tree matched its source commit. No checkout or commits were
 created. The retained series has no empty commit, repeated boundary tree, or
@@ -37,7 +38,8 @@ exact inverse patch pair.
 
 [manifest.json](manifest.json) records ordered commits, checksums, the preserved
 first-nine `compaction` proof and removed empty groups, the Vortex `extension`
-range, the `metadata_bounds_extension`, and the full-series replay. [base-tip.txt](base-tip.txt) records these
+range, the `metadata_bounds_extension` and `literal_domain_extension`, and the
+full-series replay. [base-tip.txt](base-tip.txt) records these
 identities in plain text.
 
 ## Remaining patches
@@ -58,6 +60,7 @@ identities in plain text.
 | 12 | `0038736e` | Expose supported Iceberg Vortex tasks as a generic native Vortex array source, with conservative whole-scan fallback. |
 | 13 | `3a409b31` | Reuse bounded immutable Vortex file metadata handles on the table's I/O runtime while keeping query state separate. |
 | 14 | `8a36a080` | Preserve inclusive manifest column bounds in scan tasks, shared across byte ranges, without engine-specific types or additional reads. |
+| 15 | `25bfc0fd` | Bind integer predicates to physical signed/unsigned widths using checked literals, range simplification and null-safe filter selection. |
 
 ## Native Vortex source access
 

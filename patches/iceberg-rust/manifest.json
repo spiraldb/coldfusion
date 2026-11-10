@@ -1,11 +1,11 @@
 {
   "repository": "https://github.com/spiraldb/iceberg-rust",
-  "branch": "dk/q72-file-bounds",
+  "branch": "dk/vortex-narrow-predicates",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "8a36a0802697a99fde598854d2e2bbfd7417f068",
-  "tip_tree": "82d3b94dc33fdabe7db93516de5fa179acaf85ad",
-  "patch_count": 14,
+  "tip_commit": "25bfc0fd1bd839db90cbaf7be65c5f3c34ea0eb4",
+  "tip_tree": "1de96a29d863bb593ab20047d4ccbbf3ac51312a",
+  "patch_count": 15,
   "patches": [
     {
       "patch": "0001-Split-Parquet-scans-using-physical-row-group-offsets.patch",
@@ -108,6 +108,12 @@
       "commit": "8a36a0802697a99fde598854d2e2bbfd7417f068",
       "subject": "Preserve manifest file bounds in scan tasks",
       "sha256": "69e66a5a3cbd4936bc17c4aaeb1f74e89fd242f6ca8ef5bab720d8d74fd6b776"
+    },
+    {
+      "patch": "0015-Narrow-Vortex-predicate-literals-to-physical-integer-domains.patch",
+      "commit": "25bfc0fd1bd839db90cbaf7be65c5f3c34ea0eb4",
+      "subject": "Narrow Vortex predicate literals to physical integer domains",
+      "sha256": "1ab5ef3e392255c178483c077dfee44f8500bcbac6b594397d2df054bbfab2b4"
     }
   ],
   "compaction": {
@@ -232,8 +238,8 @@
   },
   "verification": {
     "method": "Sequential git apply --cached through an isolated Git index and object directory under ignored diagnostics, using native objects read-only as alternates; git write-tree matches each commit tree. No checkout, commits, shared index or native object writes.",
-    "verified_utc": "2026-11-10T16:40:29.958228+00:00",
-    "applied_tree": "82d3b94dc33fdabe7db93516de5fa179acaf85ad",
+    "verified_utc": "2026-11-10T18:51:43.595933+00:00",
+    "applied_tree": "1de96a29d863bb593ab20047d4ccbbf3ac51312a",
     "matches_tip_tree": true,
     "first_nine_applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
     "first_nine_match_historical_tree": true,
@@ -246,6 +252,13 @@
     "tip_commit": "8a36a0802697a99fde598854d2e2bbfd7417f068",
     "patch_count": 1,
     "applied_tree": "82d3b94dc33fdabe7db93516de5fa179acaf85ad",
+    "matches_tip_tree": true
+  },
+  "literal_domain_extension": {
+    "base_commit": "8a36a0802697a99fde598854d2e2bbfd7417f068",
+    "tip_commit": "25bfc0fd1bd839db90cbaf7be65c5f3c34ea0eb4",
+    "patch_count": 1,
+    "applied_tree": "1de96a29d863bb593ab20047d4ccbbf3ac51312a",
     "matches_tip_tree": true
   }
 }

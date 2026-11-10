@@ -101,11 +101,13 @@ not currently expose these column bounds.
 
 The dependency starts from `spiraldb/iceberg-rust` main at
 `ea48146de861ee71d32ba747ca0d182ea7746ed1` and is pinned in `Cargo.toml`.
-The [14-patch series](patches/iceberg-rust/) contains nonempty native changes.
+The [15-patch series](patches/iceberg-rust/) contains nonempty native changes.
 Its first nine patches preserve the historical reader tree `930277e0`; four
 additional commits align Vortex with Arbor, improve input/output batching, expose
 a native array source, and reuse file metadata on the table IO runtime. A fifth
-exposes manifest bounds on scan tasks. The extended tip has its own tree and
+exposes manifest bounds on scan tasks. A sixth reconciles integer predicate
+literals with the physical Vortex type, including signed/unsigned boundaries
+and null-preserving range simplification. The extended tip has its own tree and
 replay proof. Cancelling experiments and the obsolete native DataFusion adapter
 remain omitted.
 
