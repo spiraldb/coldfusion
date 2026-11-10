@@ -3,9 +3,9 @@
   "branch": "dk/vortex-column-statistics",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "9ab632ff6795497dfbb509bcff8b935a2d117f44",
-  "tip_tree": "f021fcabc4f5318abceea3071d4973a7f1c99444",
-  "patch_count": 16,
+  "tip_commit": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
+  "tip_tree": "5cefff877ea173ef2f2400266b56a5f21ef6d84c",
+  "patch_count": 17,
   "patches": [
     {
       "patch": "0001-Split-Parquet-scans-using-physical-row-group-offsets.patch",
@@ -120,6 +120,12 @@
       "commit": "9ab632ff6795497dfbb509bcff8b935a2d117f44",
       "subject": "Expose Vortex file metrics and native scan integer bounds",
       "sha256": "a6915c873a665b4cbf3c1b69705998e29406fdf9760cc5edb82c8c98626a75a8"
+    },
+    {
+      "patch": "0017-Update-Vortex-for-conservative-dynamic-integer-bounds.patch",
+      "commit": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
+      "subject": "Update Vortex for conservative dynamic integer bounds",
+      "sha256": "725b6eea4e2e1b42b93afc4608fb25b435bceaa00ba22a427c9563d4468b23ee"
     }
   ],
   "compaction": {
@@ -244,8 +250,8 @@
   },
   "verification": {
     "method": "Sequential git apply --cached through an isolated Git index and object directory under ignored diagnostics, using native objects read-only as alternates; git write-tree matches each commit tree. No checkout, commits, shared index or native object writes.",
-    "verified_utc": "2026-11-10T20:03:43.676964+00:00",
-    "applied_tree": "f021fcabc4f5318abceea3071d4973a7f1c99444",
+    "verified_utc": "2026-11-10T21:58:22.565006+00:00",
+    "applied_tree": "5cefff877ea173ef2f2400266b56a5f21ef6d84c",
     "matches_tip_tree": true,
     "first_nine_applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
     "first_nine_match_historical_tree": true,
@@ -272,6 +278,14 @@
     "tip_commit": "9ab632ff6795497dfbb509bcff8b935a2d117f44",
     "patch_count": 1,
     "applied_tree": "f021fcabc4f5318abceea3071d4973a7f1c99444",
+    "matches_tip_tree": true
+  },
+  "dynamic_integer_bounds_extension": {
+    "base_commit": "9ab632ff6795497dfbb509bcff8b935a2d117f44",
+    "tip_commit": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
+    "vortex_commit": "e2d8b0fd1fc4708a38946352a3925e58c22cef5f",
+    "patch_count": 1,
+    "applied_tree": "5cefff877ea173ef2f2400266b56a5f21ef6d84c",
     "matches_tip_tree": true
   }
 }
