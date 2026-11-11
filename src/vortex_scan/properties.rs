@@ -22,7 +22,7 @@ use datafusion::arrow::datatypes::{DataType, Schema};
 use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_expr::expressions::{
-    BinaryExpr, Column, IsNotNullExpr, IsNullExpr, Literal, NotExpr,
+    BinaryExpr, Column, InListExpr, IsNotNullExpr, IsNullExpr, Literal, NotExpr,
 };
 
 pub(super) fn infallible(expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> bool {
@@ -41,6 +41,18 @@ pub(super) fn infallible_node(expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> 
         || expr.is::<IsNotNullExpr>()
     {
         true
+    } else if let Some(list) = expr.downcast_ref::<InListExpr>() {
+        // A constant, same-type primitive list only compares values; no casts,
+        // rescaling, or conditional list expressions can introduce an error.
+        list.expr().data_type(schema).is_ok_and(|dtype| {
+            comparable(&dtype)
+                && list.list().iter().all(|item| {
+                    item.is::<Literal>()
+                        && item
+                            .data_type(schema)
+                            .is_ok_and(|item_type| item_type == dtype)
+                })
+        })
     } else if let Some(binary) = expr.downcast_ref::<BinaryExpr>() {
         match binary.op() {
             Operator::And | Operator::Or => true,
@@ -54,26 +66,27 @@ pub(super) fn infallible_node(expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> 
                 .data_type(schema)
                 .ok()
                 .zip(binary.right().data_type(schema).ok())
-                .is_some_and(|(left, right)| {
-                    left == right
-                        && (left.is_integer()
-                            || left.is_floating()
-                            || matches!(
-                                left,
-                                DataType::Boolean
-                                    | DataType::Utf8
-                                    | DataType::LargeUtf8
-                                    | DataType::Utf8View
-                                    | DataType::Binary
-                                    | DataType::LargeBinary
-                                    | DataType::BinaryView
-                            ))
-                }),
+                .is_some_and(|(left, right)| left == right && comparable(&left)),
             _ => false,
         }
     } else {
         false
     }
+}
+
+fn comparable(dtype: &DataType) -> bool {
+    dtype.is_integer()
+        || dtype.is_floating()
+        || matches!(
+            dtype,
+            DataType::Boolean
+                | DataType::Utf8
+                | DataType::LargeUtf8
+                | DataType::Utf8View
+                | DataType::Binary
+                | DataType::LargeBinary
+                | DataType::BinaryView
+        )
 }
 
 pub(super) fn conditional(expr: &Arc<dyn PhysicalExpr>) -> bool {

@@ -85,14 +85,45 @@ impl ScanExpressionConverter {
         if mode == super::df_scalar::Mode::Hint && expr.data_type(schema)? != DataType::Boolean {
             return Ok(None);
         }
-        let mut candidates = NativeCandidates::default();
-        if let Some(native) = self.native_with(expr, schema, &mut candidates)?
+        self.lower_static(expr, schema, mode, &mut NativeCandidates::default())
+    }
+    // The outer entry already checked volatility/async/dynamic state for the tree.
+    // Reuse one eligibility/proof memo while splitting a Boolean snapshot.
+    fn lower_static(
+        &self,
+        expr: &Arc<dyn PhysicalExpr>,
+        schema: &Schema,
+        mode: super::df_scalar::Mode,
+        candidates: &mut NativeCandidates,
+    ) -> Result<Option<Expression>> {
+        if let Some(native) = self.native_with(expr, schema, candidates)?
             && (mode == super::df_scalar::Mode::Exact
                 || super::df_scalar::native_infallible(&native))
         {
             return Ok(Some(native));
         }
-        super::df_scalar::lower(self, expr, schema, mode, &mut candidates)
+        // Advisory predicates may only retain extra rows. AND/OR are monotone,
+        // so conservative children remain conservative together. Exposing native
+        // bounds here lets Vortex prune before evaluating opaque membership.
+        // NOT and conditional branches must remain inside one DF callback.
+        if mode == super::df_scalar::Mode::Hint
+            && let Some(binary) = expr.downcast_ref::<BinaryExpr>()
+            && matches!(binary.op(), Operator::And | Operator::Or)
+        {
+            let left = self
+                .lower_static(binary.left(), schema, mode, candidates)?
+                .unwrap_or_else(|| vortex::expr::lit(true));
+            let right = self
+                .lower_static(binary.right(), schema, mode, candidates)?
+                .unwrap_or_else(|| vortex::expr::lit(true));
+            let operator = if *binary.op() == Operator::And {
+                vortex::scalar_fn::fns::operators::Operator::And
+            } else {
+                vortex::scalar_fn::fns::operators::Operator::Or
+            };
+            return Ok(Some(vortex::expr::binary(operator, left, right)));
+        }
+        super::df_scalar::lower(self, expr, schema, mode, candidates)
     }
 }
 impl ExpressionConverter for ScanExpressionConverter {
@@ -329,6 +360,25 @@ mod tests {
     use vortex::VortexSessionDefault;
 
     use super::*;
+
+    #[test]
+    fn literal_membership_conjunction_keeps_native_pruning() {
+        let schema = Schema::new(vec![Field::new("value", DataType::Int32, false)]);
+        let value: Arc<dyn PhysicalExpr> = Arc::new(Column::new("value", 0));
+        let literal = |value| {
+            Arc::new(Literal::new(ScalarValue::Int32(Some(value)))) as Arc<dyn PhysicalExpr>
+        };
+        let membership: Arc<dyn PhysicalExpr> = Arc::new(
+            InListExpr::try_new(value.clone(), vec![literal(1), literal(3)], false, &schema)
+                .unwrap(),
+        );
+        let bound: Arc<dyn PhysicalExpr> =
+            Arc::new(BinaryExpr::new(value, Operator::GtEq, literal(1)));
+        let predicate: Arc<dyn PhysicalExpr> =
+            Arc::new(BinaryExpr::new(bound, Operator::And, membership));
+        let converter = ScanExpressionConverter::new(VortexSession::default());
+        assert!(converter.native(&predicate, &schema).unwrap().is_some());
+    }
 
     #[test]
     fn integer_overflow_uses_datafusion_arithmetic() {

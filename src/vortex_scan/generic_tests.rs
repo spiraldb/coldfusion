@@ -522,6 +522,31 @@ mod tests {
         assert!(failed.is_err());
     }
     #[test]
+    fn advisory_conjunction_exposes_native_bounds_and_conservatively_relaxes_errors() {
+        let batch = input();
+        let bound = binary(Arc::new(Column::new("id", 1)), Operator::Gt, integer(2));
+        let fallible = binary(
+            binary(integer(1), Operator::Divide, integer(0)),
+            Operator::Gt,
+            integer(0),
+        );
+        let expression = binary(bound.clone(), Operator::And, fallible);
+        let converted = ScanExpressionConverter::new(VortexSession::default())
+            .try_convert_dynamic(&expression, &batch.schema())
+            .unwrap()
+            .unwrap();
+        assert_eq!(converted.children().len(), 2); // Native AND, not an opaque DF root.
+        assert_eq!(
+            evaluate(&converted, &batch).to_data(),
+            bound
+                .evaluate(&batch)
+                .unwrap()
+                .into_array_of_size(batch.num_rows())
+                .unwrap()
+                .to_data()
+        );
+    }
+    #[test]
     fn dynamic_hint_observes_each_generation_and_exact_live_projection_stays_in_df() {
         let batch = input();
         let dynamic = Arc::new(DynamicFilterPhysicalExpr::new(
