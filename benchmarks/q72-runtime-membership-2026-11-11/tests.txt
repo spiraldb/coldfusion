@@ -1,0 +1,11 @@
+Commit 8d9bb759af53820bf20d34a5088d211e4e09370d
+test vortex_scan::runtime_filter::tests::membership_rejects_volatile_siblings ... ok
+test vortex_scan::runtime_filter::tests::membership_declines_fallible_siblings ... ok
+test vortex_scan::runtime_filter::tests::membership_rejects_malformed_cases_empty_keys_and_narrowing ... ok
+test vortex_scan::runtime_filter::tests::membership_preserves_null_hashing_and_projects_only_keys ... ok
+test vortex_scan::runtime_filter::tests::membership_leaves_live_filters_to_the_generation_watcher ... ok
+test vortex_scan::runtime_filter::tests::membership_keeps_partition_case_and_unbuilt_partition_fallback ... ok
+test vortex_scan::runtime_filter::tests::membership_source_observes_updates_and_rejects_rows_before_output ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.02s
+

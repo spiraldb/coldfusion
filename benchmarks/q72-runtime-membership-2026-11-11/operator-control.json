@@ -1,0 +1,372 @@
+{
+  "viceberg-operators": {
+    "engine": "datafusion",
+    "kind": "scan_diagnostics",
+    "plans": [
+      {
+        "logical_aggregate_present": true,
+        "logical_plan": "Limit: skip=0, fetch=100\n  Sort: total_cnt DESC NULLS FIRST, item.i_item_desc ASC NULLS FIRST, warehouse.w_warehouse_name ASC NULLS FIRST, d1.d_week_seq ASC NULLS FIRST\n    Projection: item.i_item_desc, warehouse.w_warehouse_name, d1.d_week_seq, sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END) AS no_promo, sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END) AS promo, count(Int64(1)) AS count(*) AS total_cnt\n      Aggregate: groupBy=[[item.i_item_desc, warehouse.w_warehouse_name, d1.d_week_seq]], aggr=[[sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END), count(Int64(1))]]\n        Filter: d1.d_week_seq = d2.d_week_seq AND inventory.inv_quantity_on_hand < catalog_sales.cs_quantity AND d3.d_date > d1.d_date + IntervalMonthDayNano(\"IntervalMonthDayNano { months: 0, days: 5, nanoseconds: 0 }\") AND household_demographics.hd_buy_potential = Utf8(\">10000\") AND d1.d_year = Int64(1999) AND customer_demographics.cd_marital_status = Utf8(\"D\")\n          Left Join:  Filter: catalog_returns.cr_item_sk = catalog_sales.cs_item_sk AND catalog_returns.cr_order_number = catalog_sales.cs_order_number\n            Left Join:  Filter: catalog_sales.cs_promo_sk = promotion.p_promo_sk\n              Inner Join:  Filter: catalog_sales.cs_ship_date_sk = d3.d_date_sk\n                Inner Join:  Filter: inventory.inv_date_sk = d2.d_date_sk\n                  Inner Join:  Filter: catalog_sales.cs_sold_date_sk = d1.d_date_sk\n                    Inner Join:  Filter: catalog_sales.cs_bill_hdemo_sk = household_demographics.hd_demo_sk\n                      Inner Join:  Filter: catalog_sales.cs_bill_cdemo_sk = customer_demographics.cd_demo_sk\n                        Inner Join:  Filter: item.i_item_sk = catalog_sales.cs_item_sk\n                          Inner Join:  Filter: warehouse.w_warehouse_sk = inventory.inv_warehouse_sk\n                            Inner Join:  Filter: catalog_sales.cs_item_sk = inventory.inv_item_sk\n                              TableScan: catalog_sales\n                              TableScan: inventory\n                            TableScan: warehouse\n                          TableScan: item\n                        TableScan: customer_demographics\n                      TableScan: household_demographics\n                    SubqueryAlias: d1\n                      TableScan: date_dim\n                  SubqueryAlias: d2\n                    TableScan: date_dim\n                SubqueryAlias: d3\n                  TableScan: date_dim\n              TableScan: promotion\n            TableScan: catalog_returns",
+        "operators": [
+          {
+            "operator": "SortPreservingMergeExec",
+            "output_rows": 100
+          },
+          {
+            "operator": "ProjectionExec",
+            "output_rows": 400
+          },
+          {
+            "operator": "SortExec(TopK)",
+            "output_rows": 400
+          },
+          {
+            "operator": "AggregateExec",
+            "output_rows": 2063
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 2076
+          },
+          {
+            "operator": "AggregateExec",
+            "output_rows": 2076
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 2080
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 144067
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 144067
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 2080
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 2080
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 300
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 300
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 2080
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 73049
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 73049
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 2174
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 73049
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 73049
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 385033
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 365
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 365
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 385033
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 1200
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 1200
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 385033
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 384160
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 384160
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 385033
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 385033
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 18000
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 18000
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 385033
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 5
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 5
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 385033
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 9100
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 9100
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 4991135
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 4991135
+          }
+        ],
+        "physical_aggregate_present": true,
+        "physical_plan_with_metrics": "SortPreservingMergeExec: [total_cnt@5 DESC, i_item_desc@0 ASC, w_warehouse_name@1 ASC, d_week_seq@2 ASC], fetch=100, metrics=[output_rows=100, elapsed_compute=33.41\u00b5s, output_bytes=13.4 KB, output_batches=1]\n  ProjectionExec: expr=[i_item_desc@0 as i_item_desc, w_warehouse_name@1 as w_warehouse_name, d_week_seq@2 as d_week_seq, sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END)@3 as no_promo, sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END)@4 as promo, count(Int64(1))@5 as total_cnt], metrics=[output_rows=400, elapsed_compute=5.21\u00b5s, output_bytes=55.4 KB, output_batches=4, expr_0_eval_time=500ns, expr_1_eval_time=208ns, expr_2_eval_time=167ns, expr_3_eval_time=252ns, expr_4_eval_time=127ns, expr_5_eval_time=208ns]\n    SortExec: TopK(fetch=100), expr=[count(Int64(1))@5 DESC, i_item_desc@0 ASC, w_warehouse_name@1 ASC, d_week_seq@2 ASC], preserve_partitioning=[true], filter=[count(Int64(1))@5 IS NULL OR count(Int64(1))@5 > 1 OR count(Int64(1))@5 = 1 AND (i_item_desc@0 IS NULL OR i_item_desc@0 < Components pretend please financial, outer penalties. Good, comm) OR count(Int64(1))@5 = 1 AND i_item_desc@0 = Components pretend please financial, outer penalties. Good, comm AND (w_warehouse_name@1 IS NULL OR w_warehouse_name@1 < Bad cards must make.) OR count(Int64(1))@5 = 1 AND i_item_desc@0 = Components pretend please financial, outer penalties. Good, comm AND w_warehouse_name@1 = Bad cards must make. AND (d_week_seq@2 IS NULL OR d_week_seq@2 < 5194)], metrics=[output_rows=400, elapsed_compute=844.71\u00b5s, output_bytes=55.4 KB, output_batches=4, row_replacements=1.05 K]\n      AggregateExec: mode=FinalPartitioned, gby=[i_item_desc@0 as i_item_desc, w_warehouse_name@1 as w_warehouse_name, d_week_seq@2 as d_week_seq], aggr=[sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END), count(Int64(1))], metrics=[output_rows=2.06 K, elapsed_compute=203.58\u00b5s, output_bytes=372.9 KB, output_batches=4, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, aggregate_arguments_time=2.04\u00b5s, aggregation_time=178.17\u00b5s, emitting_time=7.71\u00b5s, time_calculating_group_ids=3.75\u00b5s]\n        RepartitionExec: partitioning=Hash([i_item_desc@0, w_warehouse_name@1, d_week_seq@2], 4), input_partitions=4, metrics=[output_rows=2.08 K, elapsed_compute=4.71\u00b5s, output_bytes=1139.0 KB, output_batches=4, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=444.55ms, repartition_time=109.79\u00b5s, send_time=16.46\u00b5s]\n          AggregateExec: mode=Partial, gby=[i_item_desc@1 as i_item_desc, w_warehouse_name@0 as w_warehouse_name, d_week_seq@2 as d_week_seq], aggr=[sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END), count(Int64(1))], metrics=[output_rows=2.08 K, elapsed_compute=458.79\u00b5s, output_bytes=379.5 KB, output_batches=4, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, skipped_aggregation_rows=0, aggregate_arguments_time=49.71\u00b5s, aggregation_time=253.92\u00b5s, emitting_time=46.37\u00b5s, time_calculating_group_ids=5.54\u00b5s, reduction_factor=99.81% (2.08 K/2.08 K)]\n            HashJoinExec: mode=Partitioned, join_type=Right, on=[(cr_item_sk@0, cs_item_sk@0), (cr_order_number@1, cs_order_number@1)], projection=[w_warehouse_name@4, i_item_desc@5, d_week_seq@6, p_promo_sk@7], metrics=[output_rows=2.08 K, elapsed_compute=1.71ms, output_bytes=500.3 KB, output_batches=4, build_mem_used=6.1 MB, array_map_created_count=0, build_input_batches=20, build_input_rows=144.1 K, input_batches=4, input_rows=2.08 K, build_time=1.54ms, join_time=121.59\u00b5s, avg_fanout=100% (192/192), probe_hit_rate=9.23% (192/2.08 K)]\n              RepartitionExec: partitioning=Hash([cr_item_sk@0, cr_order_number@1], 4), input_partitions=4, metrics=[output_rows=144.1 K, elapsed_compute=5.96\u00b5s, output_bytes=1920.0 KB, output_batches=20, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=2.75ms, repartition_time=539.21\u00b5s, send_time=271.41\u00b5s]\n                DataSourceExec: VortexScanSource: projection=pack(cr_item_sk: $.cr_item_sk, cr_order_number: $.cr_order_number), metrics=[output_rows=144.1 K, elapsed_compute=363.66\u00b5s, output_bytes=1688.3 KB, output_batches=9, batches_split=23]\n              RepartitionExec: partitioning=Hash([cs_item_sk@0, cs_order_number@1], 4), input_partitions=4, metrics=[output_rows=2.08 K, elapsed_compute=2.42\u00b5s, output_bytes=884.6 KB, output_batches=4, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=437.04ms, repartition_time=71.75\u00b5s, send_time=10.17\u00b5s]\n                HashJoinExec: mode=CollectLeft, join_type=Right, on=[(p_promo_sk@0, cs_promo_sk@1)], projection=[cs_item_sk@1, cs_order_number@3, w_warehouse_name@4, i_item_desc@5, d_week_seq@6, p_promo_sk@0], metrics=[output_rows=2.08 K, elapsed_compute=124.88\u00b5s, output_bytes=884.2 KB, output_batches=4, build_mem_used=2.3 KB, array_map_created_count=1, build_input_batches=8, build_input_rows=300, input_batches=4, input_rows=2.08 K, build_time=39.67\u00b5s, join_time=66.25\u00b5s, avg_fanout=100% (2.08 K/2.08 K), probe_hit_rate=99.95% (2.08 K/2.08 K)]\n                  CoalescePartitionsExec, metrics=[output_rows=300, elapsed_compute=16.79\u00b5s, output_bytes=1200.0 B, output_batches=8]\n                    DataSourceExec: VortexScanSource: projection=pack(p_promo_sk: $.p_promo_sk), metrics=[output_rows=300, elapsed_compute=278.13\u00b5s, output_bytes=1200.0 B, output_batches=8, batches_split=0]\n                  HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(d_date_sk@0, cs_ship_date_sk@0)], filter=d_date@1 > d_date@0 + IntervalMonthDayNano { months: 0, days: 5, nanoseconds: 0 }, projection=[cs_item_sk@3, cs_promo_sk@4, cs_order_number@5, w_warehouse_name@6, i_item_desc@7, d_week_seq@9], metrics=[output_rows=2.08 K, elapsed_compute=282.26\u00b5s, output_bytes=884.2 KB, output_batches=4, build_mem_used=856.0 KB, array_map_created_count=1, build_input_batches=16, build_input_rows=73.05 K, input_batches=4, input_rows=2.17 K, build_time=127.84\u00b5s, join_time=154.00\u00b5s, avg_fanout=100% (2.17 K/2.17 K), probe_hit_rate=100% (2.17 K/2.17 K)]\n                    CoalescePartitionsExec, metrics=[output_rows=73.05 K, elapsed_compute=833ns, output_bytes=1141.4 KB, output_batches=16]\n                      DataSourceExec: VortexScanSource: projection=pack(d_date_sk: $.d_date_sk, d_date: $.d_date), metrics=[output_rows=73.05 K, elapsed_compute=532.25\u00b5s, output_bytes=570.7 KB, output_batches=8, batches_split=16]\n                    HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(d_date_sk@0, inv_date_sk@4), (d_week_seq@1, d_week_seq@8)], projection=[cs_ship_date_sk@2, cs_item_sk@3, cs_promo_sk@4, cs_order_number@5, w_warehouse_name@7, i_item_desc@8, d_date@9, d_week_seq@10], metrics=[output_rows=2.17 K, elapsed_compute=1.78ms, output_bytes=1150.7 KB, output_batches=4, build_mem_used=2.7 MB, array_map_created_count=0, build_input_batches=16, build_input_rows=73.05 K, input_batches=49, input_rows=385.0 K, build_time=604.75\u00b5s, join_time=1.17ms, avg_fanout=100% (2.17 K/2.17 K), probe_hit_rate=0.56% (2.17 K/385.0 K)]\n                      CoalescePartitionsExec, metrics=[output_rows=73.05 K, elapsed_compute=917ns, output_bytes=1141.4 KB, output_batches=16]\n                        DataSourceExec: VortexScanSource: projection=pack(d_date_sk: $.d_date_sk, d_week_seq: $.d_week_seq), metrics=[output_rows=73.05 K, elapsed_compute=606.92\u00b5s, output_bytes=570.7 KB, output_batches=8, batches_split=16]\n                      HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(d_date_sk@0, cs_sold_date_sk@0)], projection=[cs_ship_date_sk@4, cs_item_sk@5, cs_promo_sk@6, cs_order_number@7, inv_date_sk@8, w_warehouse_name@9, i_item_desc@10, d_date@1, d_week_seq@2], metrics=[output_rows=385.0 K, elapsed_compute=7.52ms, output_bytes=57.2 MB, output_batches=49, build_mem_used=5.7 KB, array_map_created_count=1, build_input_batches=1, build_input_rows=365, input_batches=49, input_rows=385.0 K, build_time=7.50\u00b5s, join_time=7.51ms, avg_fanout=100% (385.0 K/385.0 K), probe_hit_rate=100% (385.0 K/385.0 K)]\n                        CoalescePartitionsExec, metrics=[output_rows=365, elapsed_compute=666ns, output_bytes=4.3 KB, output_batches=1]\n                          DataSourceExec: VortexScanSource: projection=pack(d_date_sk: pack(d_date_sk: $.d_date_sk, d_date: $.d_date, d_week_seq: $.d_week_seq, d_year: $.d_year).d_date_sk, d_date: pack(d_date_sk: $.d_date_sk, d_date: $.d_date, d_week_seq: $.d_week_seq, d_year: $.d_year).d_date, d_week_seq: pack(d_date_sk: $.d_date_sk, d_date: $.d_date, d_week_seq: $.d_week_seq, d_year: $.d_year).d_week_seq), filter=(pack(d_date_sk: $.d_date_sk, d_date: $.d_date, d_week_seq: $.d_week_seq, d_year: $.d_year).d_year = 1999i32), metrics=[output_rows=365, elapsed_compute=1.12ms, output_bytes=4.3 KB, output_batches=1, batches_split=0]\n                        HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(hd_demo_sk@0, cs_bill_hdemo_sk@2)], projection=[cs_sold_date_sk@1, cs_ship_date_sk@2, cs_item_sk@4, cs_promo_sk@5, cs_order_number@6, inv_date_sk@7, w_warehouse_name@8, i_item_desc@9], metrics=[output_rows=385.0 K, elapsed_compute=8.01ms, output_bytes=55.7 MB, output_batches=49, build_mem_used=32.4 KB, array_map_created_count=1, build_input_batches=8, build_input_rows=1.20 K, input_batches=49, input_rows=385.0 K, build_time=22.04\u00b5s, join_time=7.99ms, avg_fanout=100% (385.0 K/385.0 K), probe_hit_rate=100% (385.0 K/385.0 K)]\n                          CoalescePartitionsExec, metrics=[output_rows=1.20 K, elapsed_compute=833ns, output_bytes=4.7 KB, output_batches=8]\n                            DataSourceExec: VortexScanSource: projection=pack(hd_demo_sk: pack(hd_demo_sk: $.hd_demo_sk, hd_buy_potential: $.hd_buy_potential).hd_demo_sk), filter=(pack(hd_demo_sk: $.hd_demo_sk, hd_buy_potential: $.hd_buy_potential).hd_buy_potential = \">10000\"), metrics=[output_rows=1.20 K, elapsed_compute=200.21\u00b5s, output_bytes=4.7 KB, output_batches=8, batches_split=0]\n                          HashJoinExec: mode=Partitioned, join_type=Inner, on=[(cd_demo_sk@0, cs_bill_cdemo_sk@2)], projection=[cs_sold_date_sk@1, cs_ship_date_sk@2, cs_bill_hdemo_sk@4, cs_item_sk@5, cs_promo_sk@6, cs_order_number@7, inv_date_sk@8, w_warehouse_name@9, i_item_desc@10], metrics=[output_rows=385.0 K, elapsed_compute=13.95ms, output_bytes=57.2 MB, output_batches=49, build_mem_used=10.0 MB, array_map_created_count=0, build_input_batches=48, build_input_rows=384.2 K, input_batches=49, input_rows=385.0 K, build_time=3.22ms, join_time=10.61ms, avg_fanout=100% (385.0 K/385.0 K), probe_hit_rate=100% (385.0 K/385.0 K)]\n                            RepartitionExec: partitioning=Hash([cd_demo_sk@0], 4), input_partitions=4, metrics=[output_rows=384.2 K, elapsed_compute=6.84\u00b5s, output_bytes=1536.0 KB, output_batches=48, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=4.13ms, repartition_time=838.75\u00b5s, send_time=225.66\u00b5s]\n                              DataSourceExec: VortexScanSource: projection=pack(cd_demo_sk: pack(cd_demo_sk: $.cd_demo_sk, cd_marital_status: $.cd_marital_status).cd_demo_sk), filter=(pack(cd_demo_sk: $.cd_demo_sk, cd_marital_status: $.cd_marital_status).cd_marital_status = \"D\"), metrics=[output_rows=384.2 K, elapsed_compute=737.45\u00b5s, output_bytes=1500.6 KB, output_batches=27, batches_split=58]\n                            RepartitionExec: partitioning=Hash([cs_bill_cdemo_sk@2], 4), input_partitions=4, metrics=[output_rows=385.0 K, elapsed_compute=7.56\u00b5s, output_bytes=59.3 MB, output_batches=49, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=402.67ms, repartition_time=9.62ms, send_time=2.01ms]\n                              HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(i_item_sk@0, cs_item_sk@4)], projection=[cs_sold_date_sk@2, cs_ship_date_sk@3, cs_bill_cdemo_sk@4, cs_bill_hdemo_sk@5, cs_item_sk@6, cs_promo_sk@7, cs_order_number@8, inv_date_sk@9, w_warehouse_name@10, i_item_desc@1], metrics=[output_rows=385.0 K, elapsed_compute=10.08ms, output_bytes=58.2 MB, output_batches=48, build_mem_used=1973.6 KB, array_map_created_count=1, build_input_batches=9, build_input_rows=18.00 K, input_batches=48, input_rows=385.0 K, build_time=292.09\u00b5s, join_time=9.78ms, avg_fanout=100% (385.0 K/385.0 K), probe_hit_rate=100% (385.0 K/385.0 K)]\n                                CoalescePartitionsExec, metrics=[output_rows=18.00 K, elapsed_compute=1.21\u00b5s, output_bytes=1903.3 KB, output_batches=9]\n                                  DataSourceExec: VortexScanSource: projection=pack(i_item_sk: $.i_item_sk, i_item_desc: $.i_item_desc), metrics=[output_rows=18.00 K, elapsed_compute=1.06ms, output_bytes=1903.3 KB, output_batches=9, batches_split=0]\n                                HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(w_warehouse_sk@0, inv_warehouse_sk@8)], projection=[cs_sold_date_sk@2, cs_ship_date_sk@3, cs_bill_cdemo_sk@4, cs_bill_hdemo_sk@5, cs_item_sk@6, cs_promo_sk@7, cs_order_number@8, inv_date_sk@9, w_warehouse_name@1], metrics=[output_rows=385.0 K, elapsed_compute=4.71ms, output_bytes=19.9 MB, output_batches=48, build_mem_used=151.0 B, array_map_created_count=1, build_input_batches=5, build_input_rows=5, input_batches=48, input_rows=385.0 K, build_time=14.38\u00b5s, join_time=4.69ms, avg_fanout=100% (385.0 K/385.0 K), probe_hit_rate=100% (385.0 K/385.0 K)]\n                                  CoalescePartitionsExec, metrics=[output_rows=5, elapsed_compute=4.38\u00b5s, output_bytes=131.0 B, output_batches=5]\n                                    DataSourceExec: VortexScanSource: projection=pack(w_warehouse_sk: $.w_warehouse_sk, w_warehouse_name: $.w_warehouse_name), metrics=[output_rows=5, elapsed_compute=124.04\u00b5s, output_bytes=131.0 B, output_batches=5, batches_split=0]\n                                  HashJoinExec: mode=Partitioned, join_type=Inner, on=[(cs_item_sk@4, inv_item_sk@1)], filter=inv_quantity_on_hand@1 < cs_quantity@0, projection=[cs_sold_date_sk@0, cs_ship_date_sk@1, cs_bill_cdemo_sk@2, cs_bill_hdemo_sk@3, cs_item_sk@4, cs_promo_sk@5, cs_order_number@6, inv_date_sk@8, inv_warehouse_sk@10], metrics=[output_rows=385.0 K, elapsed_compute=60.32ms, output_bytes=15.0 MB, output_batches=48, build_mem_used=1427.2 KB, array_map_created_count=0, build_input_batches=4, build_input_rows=9.10 K, input_batches=611, input_rows=4.99 M, build_time=153.58\u00b5s, join_time=60.13ms, avg_fanout=160.63% (8.02 M/4.99 M), probe_hit_rate=50.03% (4.99 M/9.98 M)]\n                                    RepartitionExec: partitioning=Hash([cs_item_sk@4], 4), input_partitions=4, metrics=[output_rows=9.10 K, elapsed_compute=2.96\u00b5s, output_bytes=1155.0 KB, output_batches=4, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=47.72ms, repartition_time=107.54\u00b5s, send_time=42.42\u00b5s]\n                                      DataSourceExec: VortexScanSource: projection=pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity), filter=((dynamic(DynamicFilter [ cs_item_sk@4 >= 1 AND cs_item_sk@4 <= 18000 AND hash_lookup ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_item_sk) and dynamic(DynamicFilter [ CASE hash_repartition % 4 WHEN 0 THEN cs_bill_cdemo_sk@2 >= 5 AND cs_bill_cdemo_sk@2 <= 1920786 AND hash_lookup WHEN 1 THEN cs_bill_cdemo_sk@2 >= 6 AND cs_bill_cdemo_sk@2 <= 1920785 AND hash_lookup WHEN 2 THEN cs_bill_cdemo_sk@2 >= 15 AND cs_bill_cdemo_sk@2 <= 1920796 AND hash_lookup WHEN 3 THEN cs_bill_cdemo_sk@2 >= 16 AND cs_bill_cdemo_sk@2 <= 1920775 AND hash_lookup ELSE false END ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_bill_cdemo_sk)) and ((dynamic(DynamicFilter [ cs_bill_hdemo_sk@3 >= 80 AND cs_bill_hdemo_sk@3 <= 7179 AND hash_lookup ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_bill_hdemo_sk) and dynamic(DynamicFilter [ cs_sold_date_sk@0 >= 2451180 AND cs_sold_date_sk@0 <= 2451544 AND hash_lookup ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_sold_date_sk)) and dynamic(DynamicFilter [ cs_ship_date_sk@1 >= 2415022 AND cs_ship_date_sk@1 <= 2488070 AND hash_lookup ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_ship_date_sk))), metrics=[output_rows=9.10 K, elapsed_compute=4.03ms, output_bytes=320.8 KB, output_batches=6, batches_split=0]\n                                    RepartitionExec: partitioning=Hash([inv_item_sk@1], 4), input_partitions=4, metrics=[output_rows=4.99 M, elapsed_compute=71.13\u00b5s, output_bytes=77.0 MB, output_batches=611, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=167.64ms, repartition_time=22.59ms, send_time=14.70ms]\n                                      DataSourceExec: VortexScanSource: projection=pack(inv_date_sk: $.inv_date_sk, inv_item_sk: $.inv_item_sk, inv_warehouse_sk: $.inv_warehouse_sk, inv_quantity_on_hand: $.inv_quantity_on_hand), filter=(dynamic(DynamicFilter [ CASE hash_repartition % 4 WHEN 0 THEN inv_item_sk@1 >= 4 AND inv_item_sk@1 <= 17989 AND hash_lookup WHEN 1 THEN inv_item_sk@1 >= 1 AND inv_item_sk@1 <= 17990 AND hash_lookup WHEN 2 THEN inv_item_sk@1 >= 13 AND inv_item_sk@1 <= 17995 AND hash_lookup WHEN 3 THEN inv_item_sk@1 >= 14 AND inv_item_sk@1 <= 17998 AND hash_lookup ELSE false END ], pack(inv_date_sk: $.inv_date_sk, inv_item_sk: $.inv_item_sk, inv_warehouse_sk: $.inv_warehouse_sk, inv_quantity_on_hand: $.inv_quantity_on_hand).inv_item_sk) and dynamic(DynamicFilter [ inv_warehouse_sk@2 >= 1 AND inv_warehouse_sk@2 <= 5 AND inv_warehouse_sk@2 IN (SET) ([2, 5, 1, 4, 3]) ], pack(inv_date_sk: $.inv_date_sk, inv_item_sk: $.inv_item_sk, inv_warehouse_sk: $.inv_warehouse_sk, inv_quantity_on_hand: $.inv_quantity_on_hand).inv_warehouse_sk)), metrics=[output_rows=4.99 M, elapsed_compute=9.33ms, output_bytes=76.8 MB, output_batches=142, batches_split=680]\n"
+      }
+    ],
+    "query_idx": 72,
+    "result_rows": 100,
+    "semantics": {
+      "io": "Successful non-HEAD reads at the local object store. Vortex object reads include footers and encoded data; other object reads include snapshot metadata and overlays. Fixture snapshot-open reads are reported separately from query reads.",
+      "payload_file_cache_hits": "Validated file-handle requests served from a shared initialized handle or its in-flight initializer; not encoded-segment cache hits.",
+      "scope": "One diagnostic execution after fixture/snapshot preparation. Ordinary benchmark executions do not attach these counters."
+    },
+    "store_and_native_counters_available": false,
+    "table_format": "parquet",
+    "tables": [],
+    "timed": false
+  },
+  "viceberg-control-operators": {
+    "engine": "datafusion",
+    "kind": "scan_diagnostics",
+    "plans": [
+      {
+        "logical_aggregate_present": true,
+        "logical_plan": "Limit: skip=0, fetch=100\n  Sort: total_cnt DESC NULLS FIRST, item.i_item_desc ASC NULLS FIRST, warehouse.w_warehouse_name ASC NULLS FIRST, d1.d_week_seq ASC NULLS FIRST\n    Projection: item.i_item_desc, warehouse.w_warehouse_name, d1.d_week_seq, sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END) AS no_promo, sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END) AS promo, count(Int64(1)) AS count(*) AS total_cnt\n      Aggregate: groupBy=[[item.i_item_desc, warehouse.w_warehouse_name, d1.d_week_seq]], aggr=[[sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END), count(Int64(1))]]\n        Filter: d1.d_week_seq = d2.d_week_seq AND inventory.inv_quantity_on_hand < catalog_sales.cs_quantity AND d3.d_date > d1.d_date + IntervalMonthDayNano(\"IntervalMonthDayNano { months: 0, days: 5, nanoseconds: 0 }\") AND household_demographics.hd_buy_potential = Utf8(\">10000\") AND d1.d_year = Int64(1999) AND customer_demographics.cd_marital_status = Utf8(\"D\")\n          Left Join:  Filter: catalog_returns.cr_item_sk = catalog_sales.cs_item_sk AND catalog_returns.cr_order_number = catalog_sales.cs_order_number\n            Left Join:  Filter: catalog_sales.cs_promo_sk = promotion.p_promo_sk\n              Inner Join:  Filter: catalog_sales.cs_ship_date_sk = d3.d_date_sk\n                Inner Join:  Filter: inventory.inv_date_sk = d2.d_date_sk\n                  Inner Join:  Filter: catalog_sales.cs_sold_date_sk = d1.d_date_sk\n                    Inner Join:  Filter: catalog_sales.cs_bill_hdemo_sk = household_demographics.hd_demo_sk\n                      Inner Join:  Filter: catalog_sales.cs_bill_cdemo_sk = customer_demographics.cd_demo_sk\n                        Inner Join:  Filter: item.i_item_sk = catalog_sales.cs_item_sk\n                          Inner Join:  Filter: warehouse.w_warehouse_sk = inventory.inv_warehouse_sk\n                            Inner Join:  Filter: catalog_sales.cs_item_sk = inventory.inv_item_sk\n                              TableScan: catalog_sales\n                              TableScan: inventory\n                            TableScan: warehouse\n                          TableScan: item\n                        TableScan: customer_demographics\n                      TableScan: household_demographics\n                    SubqueryAlias: d1\n                      TableScan: date_dim\n                  SubqueryAlias: d2\n                    TableScan: date_dim\n                SubqueryAlias: d3\n                  TableScan: date_dim\n              TableScan: promotion\n            TableScan: catalog_returns",
+        "operators": [
+          {
+            "operator": "SortPreservingMergeExec",
+            "output_rows": 100
+          },
+          {
+            "operator": "ProjectionExec",
+            "output_rows": 400
+          },
+          {
+            "operator": "SortExec(TopK)",
+            "output_rows": 400
+          },
+          {
+            "operator": "AggregateExec",
+            "output_rows": 2063
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 2076
+          },
+          {
+            "operator": "AggregateExec",
+            "output_rows": 2076
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 2080
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 144067
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 144067
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 2080
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 2080
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 300
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 300
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 2080
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 73049
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 73049
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 2174
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 73049
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 73049
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 385033
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 365
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 365
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 385033
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 1200
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 1200
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 2382254
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 384160
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 384160
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 11698173
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 11698173
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 18000
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 18000
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 11698173
+          },
+          {
+            "operator": "CoalescePartitionsExec",
+            "output_rows": 5
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 5
+          },
+          {
+            "operator": "HashJoinExec",
+            "output_rows": 11698173
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 280639
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 280639
+          },
+          {
+            "operator": "RepartitionExec",
+            "output_rows": 11745000
+          },
+          {
+            "operator": "DataSourceExec",
+            "output_rows": 11745000
+          }
+        ],
+        "physical_aggregate_present": true,
+        "physical_plan_with_metrics": "SortPreservingMergeExec: [total_cnt@5 DESC, i_item_desc@0 ASC, w_warehouse_name@1 ASC, d_week_seq@2 ASC], fetch=100, metrics=[output_rows=100, elapsed_compute=27.42\u00b5s, output_bytes=13.4 KB, output_batches=1]\n  ProjectionExec: expr=[i_item_desc@0 as i_item_desc, w_warehouse_name@1 as w_warehouse_name, d_week_seq@2 as d_week_seq, sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END)@3 as no_promo, sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END)@4 as promo, count(Int64(1))@5 as total_cnt], metrics=[output_rows=400, elapsed_compute=4.75\u00b5s, output_bytes=55.4 KB, output_batches=4, expr_0_eval_time=375ns, expr_1_eval_time=292ns, expr_2_eval_time=294ns, expr_3_eval_time=290ns, expr_4_eval_time=251ns, expr_5_eval_time=292ns]\n    SortExec: TopK(fetch=100), expr=[count(Int64(1))@5 DESC, i_item_desc@0 ASC, w_warehouse_name@1 ASC, d_week_seq@2 ASC], preserve_partitioning=[true], filter=[count(Int64(1))@5 IS NULL OR count(Int64(1))@5 > 1 OR count(Int64(1))@5 = 1 AND (i_item_desc@0 IS NULL OR i_item_desc@0 < Components pretend please financial, outer penalties. Good, comm) OR count(Int64(1))@5 = 1 AND i_item_desc@0 = Components pretend please financial, outer penalties. Good, comm AND (w_warehouse_name@1 IS NULL OR w_warehouse_name@1 < Bad cards must make.) OR count(Int64(1))@5 = 1 AND i_item_desc@0 = Components pretend please financial, outer penalties. Good, comm AND w_warehouse_name@1 = Bad cards must make. AND (d_week_seq@2 IS NULL OR d_week_seq@2 < 5194)], metrics=[output_rows=400, elapsed_compute=826.92\u00b5s, output_bytes=55.4 KB, output_batches=4, row_replacements=1.06 K]\n      AggregateExec: mode=FinalPartitioned, gby=[i_item_desc@0 as i_item_desc, w_warehouse_name@1 as w_warehouse_name, d_week_seq@2 as d_week_seq], aggr=[sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END), count(Int64(1))], metrics=[output_rows=2.06 K, elapsed_compute=199.25\u00b5s, output_bytes=372.9 KB, output_batches=4, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, aggregate_arguments_time=2.62\u00b5s, aggregation_time=173.25\u00b5s, emitting_time=8.13\u00b5s, time_calculating_group_ids=3.75\u00b5s]\n        RepartitionExec: partitioning=Hash([i_item_desc@0, w_warehouse_name@1, d_week_seq@2], 4), input_partitions=4, metrics=[output_rows=2.08 K, elapsed_compute=3.00\u00b5s, output_bytes=1139.0 KB, output_batches=4, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=4.02s, repartition_time=135.79\u00b5s, send_time=24.63\u00b5s]\n          AggregateExec: mode=Partial, gby=[i_item_desc@1 as i_item_desc, w_warehouse_name@0 as w_warehouse_name, d_week_seq@2 as d_week_seq], aggr=[sum(CASE WHEN promotion.p_promo_sk IS NULL THEN Int64(1) ELSE Int64(0) END), sum(CASE WHEN promotion.p_promo_sk IS NOT NULL THEN Int64(1) ELSE Int64(0) END), count(Int64(1))], metrics=[output_rows=2.08 K, elapsed_compute=463.38\u00b5s, output_bytes=379.5 KB, output_batches=4, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, skipped_aggregation_rows=0, aggregate_arguments_time=52.54\u00b5s, aggregation_time=231.37\u00b5s, emitting_time=41.75\u00b5s, time_calculating_group_ids=6.17\u00b5s, reduction_factor=99.81% (2.08 K/2.08 K)]\n            HashJoinExec: mode=Partitioned, join_type=Right, on=[(cr_item_sk@0, cs_item_sk@0), (cr_order_number@1, cs_order_number@1)], projection=[w_warehouse_name@4, i_item_desc@5, d_week_seq@6, p_promo_sk@7], metrics=[output_rows=2.08 K, elapsed_compute=1.69ms, output_bytes=500.3 KB, output_batches=4, build_mem_used=6.1 MB, array_map_created_count=0, build_input_batches=20, build_input_rows=144.1 K, input_batches=4, input_rows=2.08 K, build_time=1.51ms, join_time=121.50\u00b5s, avg_fanout=100% (192/192), probe_hit_rate=9.23% (192/2.08 K)]\n              RepartitionExec: partitioning=Hash([cr_item_sk@0, cr_order_number@1], 4), input_partitions=4, metrics=[output_rows=144.1 K, elapsed_compute=7.13\u00b5s, output_bytes=1920.0 KB, output_batches=20, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=2.07ms, repartition_time=596.21\u00b5s, send_time=272.62\u00b5s]\n                DataSourceExec: VortexScanSource: projection=pack(cr_item_sk: $.cr_item_sk, cr_order_number: $.cr_order_number), metrics=[output_rows=144.1 K, elapsed_compute=359.25\u00b5s, output_bytes=1688.3 KB, output_batches=9, batches_split=23]\n              RepartitionExec: partitioning=Hash([cs_item_sk@0, cs_order_number@1], 4), input_partitions=4, metrics=[output_rows=2.08 K, elapsed_compute=2.42\u00b5s, output_bytes=884.6 KB, output_batches=4, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=4.02s, repartition_time=72.08\u00b5s, send_time=13.92\u00b5s]\n                HashJoinExec: mode=CollectLeft, join_type=Right, on=[(p_promo_sk@0, cs_promo_sk@1)], projection=[cs_item_sk@1, cs_order_number@3, w_warehouse_name@4, i_item_desc@5, d_week_seq@6, p_promo_sk@0], metrics=[output_rows=2.08 K, elapsed_compute=158.58\u00b5s, output_bytes=884.2 KB, output_batches=4, build_mem_used=2.3 KB, array_map_created_count=1, build_input_batches=8, build_input_rows=300, input_batches=4, input_rows=2.08 K, build_time=45.75\u00b5s, join_time=89.96\u00b5s, avg_fanout=100% (2.08 K/2.08 K), probe_hit_rate=99.95% (2.08 K/2.08 K)]\n                  CoalescePartitionsExec, metrics=[output_rows=300, elapsed_compute=15.38\u00b5s, output_bytes=1200.0 B, output_batches=8]\n                    DataSourceExec: VortexScanSource: projection=pack(p_promo_sk: $.p_promo_sk), metrics=[output_rows=300, elapsed_compute=303.59\u00b5s, output_bytes=1200.0 B, output_batches=8, batches_split=0]\n                  HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(d_date_sk@0, cs_ship_date_sk@0)], filter=d_date@1 > d_date@0 + IntervalMonthDayNano { months: 0, days: 5, nanoseconds: 0 }, projection=[cs_item_sk@3, cs_promo_sk@4, cs_order_number@5, w_warehouse_name@6, i_item_desc@7, d_week_seq@9], metrics=[output_rows=2.08 K, elapsed_compute=306.84\u00b5s, output_bytes=884.2 KB, output_batches=4, build_mem_used=856.0 KB, array_map_created_count=1, build_input_batches=16, build_input_rows=73.05 K, input_batches=4, input_rows=2.17 K, build_time=115.21\u00b5s, join_time=191.13\u00b5s, avg_fanout=100% (2.17 K/2.17 K), probe_hit_rate=100% (2.17 K/2.17 K)]\n                    CoalescePartitionsExec, metrics=[output_rows=73.05 K, elapsed_compute=875ns, output_bytes=1141.4 KB, output_batches=16]\n                      DataSourceExec: VortexScanSource: projection=pack(d_date_sk: $.d_date_sk, d_date: $.d_date), metrics=[output_rows=73.05 K, elapsed_compute=588.88\u00b5s, output_bytes=570.7 KB, output_batches=8, batches_split=16]\n                    HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(d_date_sk@0, inv_date_sk@4), (d_week_seq@1, d_week_seq@8)], projection=[cs_ship_date_sk@2, cs_item_sk@3, cs_promo_sk@4, cs_order_number@5, w_warehouse_name@7, i_item_desc@8, d_date@9, d_week_seq@10], metrics=[output_rows=2.17 K, elapsed_compute=2.32ms, output_bytes=1150.7 KB, output_batches=4, build_mem_used=2.7 MB, array_map_created_count=0, build_input_batches=16, build_input_rows=73.05 K, input_batches=49, input_rows=385.0 K, build_time=625.38\u00b5s, join_time=1.68ms, avg_fanout=100% (2.17 K/2.17 K), probe_hit_rate=0.56% (2.17 K/385.0 K)]\n                      CoalescePartitionsExec, metrics=[output_rows=73.05 K, elapsed_compute=834ns, output_bytes=1141.4 KB, output_batches=16]\n                        DataSourceExec: VortexScanSource: projection=pack(d_date_sk: $.d_date_sk, d_week_seq: $.d_week_seq), metrics=[output_rows=73.05 K, elapsed_compute=646.96\u00b5s, output_bytes=570.7 KB, output_batches=8, batches_split=16]\n                      HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(d_date_sk@0, cs_sold_date_sk@0)], projection=[cs_ship_date_sk@4, cs_item_sk@5, cs_promo_sk@6, cs_order_number@7, inv_date_sk@8, w_warehouse_name@9, i_item_desc@10, d_date@1, d_week_seq@2], metrics=[output_rows=385.0 K, elapsed_compute=9.15ms, output_bytes=57.2 MB, output_batches=49, build_mem_used=5.7 KB, array_map_created_count=1, build_input_batches=1, build_input_rows=365, input_batches=49, input_rows=385.0 K, build_time=7.38\u00b5s, join_time=9.14ms, avg_fanout=100% (385.0 K/385.0 K), probe_hit_rate=100% (385.0 K/385.0 K)]\n                        CoalescePartitionsExec, metrics=[output_rows=365, elapsed_compute=2.12\u00b5s, output_bytes=4.3 KB, output_batches=1]\n                          DataSourceExec: VortexScanSource: projection=pack(d_date_sk: pack(d_date_sk: $.d_date_sk, d_date: $.d_date, d_week_seq: $.d_week_seq, d_year: $.d_year).d_date_sk, d_date: pack(d_date_sk: $.d_date_sk, d_date: $.d_date, d_week_seq: $.d_week_seq, d_year: $.d_year).d_date, d_week_seq: pack(d_date_sk: $.d_date_sk, d_date: $.d_date, d_week_seq: $.d_week_seq, d_year: $.d_year).d_week_seq), filter=(pack(d_date_sk: $.d_date_sk, d_date: $.d_date, d_week_seq: $.d_week_seq, d_year: $.d_year).d_year = 1999i32), metrics=[output_rows=365, elapsed_compute=1.13ms, output_bytes=4.3 KB, output_batches=1, batches_split=0]\n                        HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(hd_demo_sk@0, cs_bill_hdemo_sk@2)], projection=[cs_sold_date_sk@1, cs_ship_date_sk@2, cs_item_sk@4, cs_promo_sk@5, cs_order_number@6, inv_date_sk@7, w_warehouse_name@8, i_item_desc@9], metrics=[output_rows=385.0 K, elapsed_compute=18.79ms, output_bytes=55.7 MB, output_batches=49, build_mem_used=32.4 KB, array_map_created_count=1, build_input_batches=8, build_input_rows=1.20 K, input_batches=294, input_rows=2.38 M, build_time=30.75\u00b5s, join_time=18.76ms, avg_fanout=100% (385.0 K/385.0 K), probe_hit_rate=16.16% (385.0 K/2.38 M)]\n                          CoalescePartitionsExec, metrics=[output_rows=1.20 K, elapsed_compute=1.00\u00b5s, output_bytes=4.7 KB, output_batches=8]\n                            DataSourceExec: VortexScanSource: projection=pack(hd_demo_sk: pack(hd_demo_sk: $.hd_demo_sk, hd_buy_potential: $.hd_buy_potential).hd_demo_sk), filter=(pack(hd_demo_sk: $.hd_demo_sk, hd_buy_potential: $.hd_buy_potential).hd_buy_potential = \">10000\"), metrics=[output_rows=1.20 K, elapsed_compute=187.41\u00b5s, output_bytes=4.7 KB, output_batches=8, batches_split=0]\n                          HashJoinExec: mode=Partitioned, join_type=Inner, on=[(cd_demo_sk@0, cs_bill_cdemo_sk@2)], projection=[cs_sold_date_sk@1, cs_ship_date_sk@2, cs_bill_hdemo_sk@4, cs_item_sk@5, cs_promo_sk@6, cs_order_number@7, inv_date_sk@8, w_warehouse_name@9, i_item_desc@10], metrics=[output_rows=2.38 M, elapsed_compute=191.23ms, output_bytes=351.4 MB, output_batches=294, build_mem_used=10.0 MB, array_map_created_count=0, build_input_batches=48, build_input_rows=384.2 K, input_batches=1.43 K, input_rows=11.70 M, build_time=3.34ms, join_time=187.78ms, avg_fanout=100% (2.38 M/2.38 M), probe_hit_rate=20.36% (2.38 M/11.70 M)]\n                            RepartitionExec: partitioning=Hash([cd_demo_sk@0], 4), input_partitions=4, metrics=[output_rows=384.2 K, elapsed_compute=8.38\u00b5s, output_bytes=1536.0 KB, output_batches=48, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=4.14ms, repartition_time=832.37\u00b5s, send_time=320.54\u00b5s]\n                              DataSourceExec: VortexScanSource: projection=pack(cd_demo_sk: pack(cd_demo_sk: $.cd_demo_sk, cd_marital_status: $.cd_marital_status).cd_demo_sk), filter=(pack(cd_demo_sk: $.cd_demo_sk, cd_marital_status: $.cd_marital_status).cd_marital_status = \"D\"), metrics=[output_rows=384.2 K, elapsed_compute=776.55\u00b5s, output_bytes=1500.6 KB, output_batches=27, batches_split=58]\n                            RepartitionExec: partitioning=Hash([cs_bill_cdemo_sk@2], 4), input_partitions=4, metrics=[output_rows=11.70 M, elapsed_compute=325.19\u00b5s, output_bytes=1765.4 MB, output_batches=1.43 K, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=3.28s, repartition_time=260.52ms, send_time=127.98ms]\n                              HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(i_item_sk@0, cs_item_sk@4)], projection=[cs_sold_date_sk@2, cs_ship_date_sk@3, cs_bill_cdemo_sk@4, cs_bill_hdemo_sk@5, cs_item_sk@6, cs_promo_sk@7, cs_order_number@8, inv_date_sk@9, w_warehouse_name@10, i_item_desc@1], metrics=[output_rows=11.70 M, elapsed_compute=259.54ms, output_bytes=1766.5 MB, output_batches=1.43 K, build_mem_used=1973.6 KB, array_map_created_count=1, build_input_batches=9, build_input_rows=18.00 K, input_batches=1.43 K, input_rows=11.70 M, build_time=323.71\u00b5s, join_time=259.20ms, avg_fanout=100% (11.70 M/11.70 M), probe_hit_rate=100% (11.70 M/11.70 M)]\n                                CoalescePartitionsExec, metrics=[output_rows=18.00 K, elapsed_compute=1.04\u00b5s, output_bytes=1903.3 KB, output_batches=9]\n                                  DataSourceExec: VortexScanSource: projection=pack(i_item_sk: $.i_item_sk, i_item_desc: $.i_item_desc), metrics=[output_rows=18.00 K, elapsed_compute=1.16ms, output_bytes=1903.3 KB, output_batches=9, batches_split=0]\n                                HashJoinExec: mode=CollectLeft, join_type=Inner, on=[(w_warehouse_sk@0, inv_warehouse_sk@8)], projection=[cs_sold_date_sk@2, cs_ship_date_sk@3, cs_bill_cdemo_sk@4, cs_bill_hdemo_sk@5, cs_item_sk@6, cs_promo_sk@7, cs_order_number@8, inv_date_sk@9, w_warehouse_name@1], metrics=[output_rows=11.70 M, elapsed_compute=147.88ms, output_bytes=606.9 MB, output_batches=1.43 K, build_mem_used=151.0 B, array_map_created_count=1, build_input_batches=5, build_input_rows=5, input_batches=1.43 K, input_rows=11.70 M, build_time=14.55\u00b5s, join_time=147.86ms, avg_fanout=100% (11.70 M/11.70 M), probe_hit_rate=100% (11.70 M/11.70 M)]\n                                  CoalescePartitionsExec, metrics=[output_rows=5, elapsed_compute=791ns, output_bytes=131.0 B, output_batches=5]\n                                    DataSourceExec: VortexScanSource: projection=pack(w_warehouse_sk: $.w_warehouse_sk, w_warehouse_name: $.w_warehouse_name), metrics=[output_rows=5, elapsed_compute=138.50\u00b5s, output_bytes=131.0 B, output_batches=5, batches_split=0]\n                                  HashJoinExec: mode=Partitioned, join_type=Inner, on=[(cs_item_sk@4, inv_item_sk@1)], filter=inv_quantity_on_hand@1 < cs_quantity@0, projection=[cs_sold_date_sk@0, cs_ship_date_sk@1, cs_bill_cdemo_sk@2, cs_bill_hdemo_sk@3, cs_item_sk@4, cs_promo_sk@5, cs_order_number@6, inv_date_sk@8, inv_warehouse_sk@10], metrics=[output_rows=11.70 M, elapsed_compute=2.73s, output_bytes=449.8 MB, output_batches=1.43 K, build_mem_used=11.6 MB, array_map_created_count=4, build_input_batches=36, build_input_rows=280.6 K, input_batches=1.44 K, input_rows=11.74 M, build_time=2.40ms, join_time=2.73s, avg_fanout=3104.43% (244.4 M/7.87 M), probe_hit_rate=3.14% (7.87 M/250.5 M)]\n                                    RepartitionExec: partitioning=Hash([cs_item_sk@4], 4), input_partitions=4, metrics=[output_rows=280.6 K, elapsed_compute=10.22\u00b5s, output_bytes=10.2 MB, output_batches=36, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=20.05ms, repartition_time=2.43ms, send_time=1.35ms]\n                                      DataSourceExec: VortexScanSource: projection=pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity), filter=((dynamic(DynamicFilter [ cs_item_sk@4 >= 1 AND cs_item_sk@4 <= 18000 AND hash_lookup ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_item_sk) and dynamic(DynamicFilter [ CASE hash_repartition % 4 WHEN 0 THEN cs_bill_cdemo_sk@2 >= 5 AND cs_bill_cdemo_sk@2 <= 1920786 AND hash_lookup WHEN 1 THEN cs_bill_cdemo_sk@2 >= 6 AND cs_bill_cdemo_sk@2 <= 1920785 AND hash_lookup WHEN 2 THEN cs_bill_cdemo_sk@2 >= 15 AND cs_bill_cdemo_sk@2 <= 1920796 AND hash_lookup WHEN 3 THEN cs_bill_cdemo_sk@2 >= 16 AND cs_bill_cdemo_sk@2 <= 1920775 AND hash_lookup ELSE false END ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_bill_cdemo_sk)) and ((dynamic(DynamicFilter [ cs_bill_hdemo_sk@3 >= 80 AND cs_bill_hdemo_sk@3 <= 7179 AND hash_lookup ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_bill_hdemo_sk) and dynamic(DynamicFilter [ cs_sold_date_sk@0 >= 2451180 AND cs_sold_date_sk@0 <= 2451544 AND hash_lookup ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_sold_date_sk)) and dynamic(DynamicFilter [ cs_ship_date_sk@1 >= 2415022 AND cs_ship_date_sk@1 <= 2488070 AND hash_lookup ], pack(cs_sold_date_sk: $.cs_sold_date_sk, cs_ship_date_sk: $.cs_ship_date_sk, cs_bill_cdemo_sk: $.cs_bill_cdemo_sk, cs_bill_hdemo_sk: $.cs_bill_hdemo_sk, cs_item_sk: $.cs_item_sk, cs_promo_sk: $.cs_promo_sk, cs_order_number: $.cs_order_number, cs_quantity: $.cs_quantity).cs_ship_date_sk))), metrics=[output_rows=280.6 K, elapsed_compute=6.15ms, output_bytes=9.7 MB, output_batches=6, batches_split=36]\n                                    RepartitionExec: partitioning=Hash([inv_item_sk@1], 4), input_partitions=4, metrics=[output_rows=11.74 M, elapsed_compute=479.14\u00b5s, output_bytes=180.9 MB, output_batches=1.44 K, spill_count=0, spilled_bytes=0.0 B, spilled_rows=0, fetch_time=168.40ms, repartition_time=55.30ms, send_time=2.32s]\n                                      DataSourceExec: VortexScanSource: projection=pack(inv_date_sk: $.inv_date_sk, inv_item_sk: $.inv_item_sk, inv_warehouse_sk: $.inv_warehouse_sk, inv_quantity_on_hand: $.inv_quantity_on_hand), filter=(dynamic(DynamicFilter [ CASE hash_repartition % 4 WHEN 0 THEN inv_item_sk@1 >= 2 AND inv_item_sk@1 <= 17989 AND hash_lookup WHEN 1 THEN inv_item_sk@1 >= 1 AND inv_item_sk@1 <= 17992 AND hash_lookup WHEN 2 THEN inv_item_sk@1 >= 10 AND inv_item_sk@1 <= 17996 AND hash_lookup WHEN 3 THEN inv_item_sk@1 >= 14 AND inv_item_sk@1 <= 17998 AND hash_lookup ELSE false END ], pack(inv_date_sk: $.inv_date_sk, inv_item_sk: $.inv_item_sk, inv_warehouse_sk: $.inv_warehouse_sk, inv_quantity_on_hand: $.inv_quantity_on_hand).inv_item_sk) and dynamic(DynamicFilter [ inv_warehouse_sk@2 >= 1 AND inv_warehouse_sk@2 <= 5 AND inv_warehouse_sk@2 IN (SET) ([2, 4, 5, 1, 3]) ], pack(inv_date_sk: $.inv_date_sk, inv_item_sk: $.inv_item_sk, inv_warehouse_sk: $.inv_warehouse_sk, inv_quantity_on_hand: $.inv_quantity_on_hand).inv_warehouse_sk)), metrics=[output_rows=11.74 M, elapsed_compute=9.66ms, output_bytes=180.6 MB, output_batches=142, batches_split=1.49 K]\n"
+      }
+    ],
+    "query_idx": 72,
+    "result_rows": 100,
+    "semantics": {
+      "io": "Successful non-HEAD reads at the local object store. Vortex object reads include footers and encoded data; other object reads include snapshot metadata and overlays. Fixture snapshot-open reads are reported separately from query reads.",
+      "payload_file_cache_hits": "Validated file-handle requests served from a shared initialized handle or its in-flight initializer; not encoded-segment cache hits.",
+      "scope": "One diagnostic execution after fixture/snapshot preparation. Ordinary benchmark executions do not attach these counters."
+    },
+    "store_and_native_counters_available": false,
+    "table_format": "parquet",
+    "tables": [],
+    "timed": false
+  }
+}
