@@ -1,11 +1,11 @@
 {
   "repository": "https://github.com/spiraldb/iceberg-rust",
-  "branch": "dk/vortex-column-statistics",
+  "branch": "ngates/vortex-5e08d3a9",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
-  "tip_tree": "5cefff877ea173ef2f2400266b56a5f21ef6d84c",
-  "patch_count": 17,
+  "tip_commit": "53a3b2859f436f23f3be53a6661c2c9bd7706b7c",
+  "tip_tree": "411adb6d73486c333b8821bbdbfdf77771910cbc",
+  "patch_count": 18,
   "patches": [
     {
       "patch": "0001-Split-Parquet-scans-using-physical-row-group-offsets.patch",
@@ -126,6 +126,12 @@
       "commit": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
       "subject": "Update Vortex for conservative dynamic integer bounds",
       "sha256": "725b6eea4e2e1b42b93afc4608fb25b435bceaa00ba22a427c9563d4468b23ee"
+    },
+    {
+      "patch": "0018-Move-Vortex-to-5e08d3a9-to-match-spiraldb.patch",
+      "commit": "53a3b2859f436f23f3be53a6661c2c9bd7706b7c",
+      "subject": "Move Vortex to 5e08d3a9 to match spiraldb",
+      "sha256": "14c700d612e663ff9e2f1d005c82eb2c618b34843c40cde557f11a266f93711a"
     }
   ],
   "compaction": {
@@ -286,6 +292,14 @@
     "vortex_commit": "e2d8b0fd1fc4708a38946352a3925e58c22cef5f",
     "patch_count": 1,
     "applied_tree": "5cefff877ea173ef2f2400266b56a5f21ef6d84c",
+    "matches_tip_tree": true
+  },
+  "spiraldb_vortex_extension": {
+    "base_commit": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
+    "tip_commit": "53a3b2859f436f23f3be53a6661c2c9bd7706b7c",
+    "vortex_commit": "5e08d3a9c80a448c92bd2ab52c509873ba0ccdeb",
+    "patch_count": 1,
+    "applied_tree": "411adb6d73486c333b8821bbdbfdf77771910cbc",
     "matches_tip_tree": true
   }
 }
