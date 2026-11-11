@@ -1,14 +1,14 @@
 # Iceberg Rust patch series
 
-These 17 patches contain the native Iceberg changes used by ColdFusion, based on
+These 18 patches contain the native Iceberg changes used by ColdFusion, based on
 `spiraldb/iceberg-rust` main. The provider remains in ColdFusion; this native
 workspace has no DataFusion dependency or adapter.
 
 - Repository: https://github.com/spiraldb/iceberg-rust
-- Branch: `dk/vortex-column-statistics`
+- Branch: `dk/generic-expression-vortex`
 - Base: `ea48146de861ee71d32ba747ca0d182ea7746ed1`
-- Tip: `a82bafad2b6ea12fefa110fdc02e6e41a6096231`
-- Resulting tree: `5cefff877ea173ef2f2400266b56a5f21ef6d84c`
+- Tip: `32ac258f766b0404eb768e30b8851b10e956d9fa`
+- Resulting tree: `3a8cf82e4e57da85cad919abda185eb48439773c`
 
 The first nine patches preserve the previous compaction: their tree is exactly
 `7f9e7822a40c5bf67e711ac0d1cf755d23d17877`, matching the historical 25-commit tip
@@ -32,7 +32,7 @@ done
 git write-tree
 ```
 
-The resulting tree must be `5cefff877ea173ef2f2400266b56a5f21ef6d84c`. Verification replayed all 17 patches and the
+The resulting tree must be `3a8cf82e4e57da85cad919abda185eb48439773c`. Verification replayed all 18 patches and the
 four-patch extension separately through isolated Git indexes and object stores.
 Each intermediate tree matched its source commit. No checkout or commits were
 created. The retained series has no empty commit, repeated boundary tree, or
@@ -66,6 +66,8 @@ identities in plain text.
 | 16 | `9ab632ff` | Reuse footer metrics for no-rewrite imports and expose complete, conservative integer column bounds through the native Vortex source. |
 
 | 17 | `a82bafad` | Align Vortex with conservative recovery of integer bounds in live DataFusion filter snapshots. |
+
+| 18 | `32ac258f` | Align the Vortex dependency with an advisory dynamic-converter hook; no native reader behavior changes. |
 
 ## Native Vortex source access
 

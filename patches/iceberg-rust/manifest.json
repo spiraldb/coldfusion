@@ -1,11 +1,11 @@
 {
   "repository": "https://github.com/spiraldb/iceberg-rust",
-  "branch": "dk/vortex-column-statistics",
+  "branch": "dk/generic-expression-vortex",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
-  "tip_tree": "5cefff877ea173ef2f2400266b56a5f21ef6d84c",
-  "patch_count": 17,
+  "tip_commit": "32ac258f766b0404eb768e30b8851b10e956d9fa",
+  "tip_tree": "3a8cf82e4e57da85cad919abda185eb48439773c",
+  "patch_count": 18,
   "patches": [
     {
       "patch": "0001-Split-Parquet-scans-using-physical-row-group-offsets.patch",
@@ -126,6 +126,12 @@
       "commit": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
       "subject": "Update Vortex for conservative dynamic integer bounds",
       "sha256": "725b6eea4e2e1b42b93afc4608fb25b435bceaa00ba22a427c9563d4468b23ee"
+    },
+    {
+      "patch": "0018-Allow-conservative-advisory-expression-converters.patch",
+      "commit": "32ac258f766b0404eb768e30b8851b10e956d9fa",
+      "subject": "Align Vortex types with the dynamic converter extension",
+      "sha256": "9f579daaf0533f8a1096b4e8b329c14860db3c0e3b391febc53e06059c64b8fc"
     }
   ],
   "compaction": {
@@ -250,8 +256,8 @@
   },
   "verification": {
     "method": "Sequential git apply --cached through an isolated Git index and object directory under ignored diagnostics, using native objects read-only as alternates; git write-tree matches each commit tree. No checkout, commits, shared index or native object writes.",
-    "verified_utc": "2026-11-10T21:58:22.565006+00:00",
-    "applied_tree": "5cefff877ea173ef2f2400266b56a5f21ef6d84c",
+    "verified_utc": "2026-11-11T20:29:09.110786+00:00",
+    "applied_tree": "3a8cf82e4e57da85cad919abda185eb48439773c",
     "matches_tip_tree": true,
     "first_nine_applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
     "first_nine_match_historical_tree": true,
@@ -286,6 +292,14 @@
     "vortex_commit": "e2d8b0fd1fc4708a38946352a3925e58c22cef5f",
     "patch_count": 1,
     "applied_tree": "5cefff877ea173ef2f2400266b56a5f21ef6d84c",
+    "matches_tip_tree": true
+  },
+  "dynamic_converter_extension": {
+    "base_commit": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
+    "tip_commit": "32ac258f766b0404eb768e30b8851b10e956d9fa",
+    "vortex_commit": "5d6cfc1bdccb4dcf90e4812fcc5fcbc5a9ef6a6a",
+    "patch_count": 1,
+    "applied_tree": "3a8cf82e4e57da85cad919abda185eb48439773c",
     "matches_tip_tree": true
   }
 }
