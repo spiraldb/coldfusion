@@ -105,13 +105,29 @@ fn supported(expression: &Arc<dyn PhysicalExpr>, schema: &Schema) -> Result<bool
     let accepted = if expression.is::<Column>() || expression.is::<Literal>() {
         dtype.is_integer() || dtype == DataType::Boolean
     } else if expression.is::<HashExpr>() || expression.is::<HashTableLookupExpr>() {
-        expression.children().iter().all(|child| {
-            child
-                .data_type(schema)
-                .is_ok_and(|dtype| dtype.is_integer())
-        })
-    } else if expression.is::<CaseExpr>() {
-        true
+        !expression.children().is_empty()
+            && (!expression.is::<HashTableLookupExpr>() || expression.children().len() == 1)
+            && expression.children().iter().all(|child| {
+                child
+                    .data_type(schema)
+                    .is_ok_and(|dtype| dtype.is_integer())
+            })
+    } else if let Some(case) = expression.downcast_ref::<CaseExpr>() {
+        let condition_type = case
+            .expr()
+            .map(|base| base.data_type(schema))
+            .transpose()?
+            .unwrap_or(DataType::Boolean);
+        let mut types_match = case
+            .else_expr()
+            .map(|value| value.data_type(schema))
+            .transpose()?
+            .is_none_or(|value_type| value_type == dtype);
+        for (when, then) in case.when_then_expr() {
+            types_match &=
+                when.data_type(schema)? == condition_type && then.data_type(schema)? == dtype;
+        }
+        types_match
     } else if let Some(binary) = expression.downcast_ref::<BinaryExpr>() {
         let left = binary.left().data_type(schema)?;
         let right = binary.right().data_type(schema)?;
@@ -199,7 +215,9 @@ impl ScalarFnVTable for DataFusionMembership {
         );
         for (dtype, field) in args.iter().zip(options.schema.fields()) {
             vortex_ensure!(
-                dtype.is_int() && Some(dtype.as_ptype()) == integer_type(field.data_type()),
+                dtype.is_int()
+                    && Some(dtype.as_ptype()) == integer_type(field.data_type())
+                    && (!dtype.is_nullable() || field.is_nullable()),
                 "membership key must match its logical integer type: {field}, got {dtype}"
             );
         }
@@ -356,11 +374,21 @@ mod tests {
             Operator::Modulo,
             Arc::new(Literal::new(ScalarValue::UInt64(Some(4)))),
         ));
+        let routes = route
+            .evaluate(&batch)
+            .unwrap()
+            .into_array(batch.num_rows())
+            .unwrap();
+        let partition = routes
+            .as_any()
+            .downcast_ref::<datafusion::arrow::array::UInt64Array>()
+            .unwrap()
+            .value(0);
         let predicate: Arc<dyn PhysicalExpr> = Arc::new(
             CaseExpr::try_new(
                 Some(route),
                 vec![(
-                    Arc::new(Literal::new(ScalarValue::UInt64(Some(0)))),
+                    Arc::new(Literal::new(ScalarValue::UInt64(Some(partition)))),
                     lookup(vec![Some(2), Some(5)], 1, 42),
                 )],
                 Some(Arc::new(Literal::new(ScalarValue::Boolean(Some(true))))),
@@ -368,8 +396,11 @@ mod tests {
             .unwrap(),
         );
         let converted = try_convert(&predicate, &batch.schema()).unwrap().unwrap();
+        let actual = evaluate(&converted, &batch);
+        let mask = actual.as_any().downcast_ref::<BooleanArray>().unwrap();
+        assert!(mask.true_count() > 0 && mask.false_count() > 0);
         assert_eq!(
-            evaluate(&converted, &batch).to_data(),
+            actual.to_data(),
             predicate
                 .evaluate(&batch)
                 .unwrap()
@@ -550,5 +581,57 @@ mod tests {
         ));
         assert!(expression.evaluate(&batch).is_err());
         assert!(try_convert(&expression, &batch.schema()).unwrap().is_none());
+    }
+    #[test]
+    fn membership_rejects_malformed_cases_empty_keys_and_narrowing() {
+        let batch = input();
+        let lookup = lookup(vec![Some(2)], 1, 7);
+        let truth: Arc<dyn PhysicalExpr> = Arc::new(Literal::new(ScalarValue::Boolean(Some(true))));
+        let one: Arc<dyn PhysicalExpr> = Arc::new(Literal::new(ScalarValue::Int64(Some(1))));
+        for case in [
+            CaseExpr::try_new(
+                None,
+                vec![(one.clone(), lookup.clone())],
+                Some(truth.clone()),
+            ),
+            CaseExpr::try_new(
+                Some(one.clone()),
+                vec![(truth.clone(), lookup.clone())],
+                Some(truth.clone()),
+            ),
+            CaseExpr::try_new(
+                None,
+                vec![(truth.clone(), lookup.clone())],
+                Some(one.clone()),
+            ),
+        ] {
+            let case: Arc<dyn PhysicalExpr> = Arc::new(case.unwrap());
+            assert!(try_convert(&case, &batch.schema()).unwrap().is_none());
+        }
+        let empty: Arc<dyn PhysicalExpr> = Arc::new(HashExpr::new(
+            vec![],
+            SeededRandomState::with_seed(0),
+            "empty".into(),
+        ));
+        assert!(!supported(&empty, &batch.schema()).unwrap());
+        let converted = try_convert(&lookup, &batch.schema()).unwrap().unwrap();
+        let scalar = converted.as_scalar().unwrap();
+        assert!(
+            scalar
+                .return_dtype(&[DType::Primitive(PType::I32, Nullability::Nullable)])
+                .is_err()
+        );
+        let required = RuntimePredicate {
+            expression: lookup,
+            schema: Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)])),
+        };
+        assert!(
+            DataFusionMembership
+                .return_dtype(&required, &[DType::Primitive(
+                    PType::I64,
+                    Nullability::Nullable
+                )])
+                .is_err()
+        );
     }
 }
