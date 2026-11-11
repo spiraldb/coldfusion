@@ -1,0 +1,43 @@
+{
+  "argv": [
+    "/Users/danielking/projects/coldfusion/spiraldb/target/release/engine-bench",
+    "tpcds",
+    "--iterations",
+    "80",
+    "--warmups",
+    "1",
+    "--formats",
+    "parquet",
+    "--hide-progress-bar",
+    "--threads",
+    "4",
+    "--queries",
+    "39",
+    "--opt",
+    "scale-factor=1",
+    "--opt",
+    "remote-data-dir=file:///Users/danielking/projects/coldfusion/bench-cache/vortex/vortex-bench/data/tpcds/1/",
+    "--query-engine",
+    "datafusion",
+    "--sql-timeout-secs",
+    "120",
+    "--table-prepare-timeout-secs",
+    "120",
+    "--table-format",
+    "coldfusion-vortex",
+    "--run-id",
+    "sample-after",
+    "--gh-json-v3",
+    "/Users/danielking/projects/coldfusion/bench-cache/generic-expression-pushdown/sample-after.jsonl"
+  ],
+  "profiler": [
+    "/usr/bin/sample",
+    "<benchmark-pid>",
+    "1",
+    "1",
+    "-file",
+    "/Users/danielking/projects/coldfusion/bench-cache/generic-expression-pushdown/sample-after.txt"
+  ],
+  "binary_sha256": "2124b6de991be550185e0ac2397cbdb7e1d54a5600edfe405b3e2584cf11b1f1",
+  "receipt_note": "Actual capture reran the recorded command with 80 iterations after sandbox process-inspection failure; argv reconstructed from executed command."
+}

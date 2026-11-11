@@ -1,0 +1,29 @@
+{
+  "provider_before": "8d9bb759af53820bf20d34a5088d211e4e09370d",
+  "provider_after": "34045d5b61bdc927fe27d709b522008fda3fcd11",
+  "native_before": "a82bafad2b6ea12fefa110fdc02e6e41a6096231",
+  "native_after": "32ac258f766b0404eb768e30b8851b10e956d9fa",
+  "coldfusion_vortex_before": "e2d8b0fd1fc4708a38946352a3925e58c22cef5f",
+  "coldfusion_vortex_after": "5d6cfc1bdccb4dcf90e4812fcc5fcbc5a9ef6a6a",
+  "arbor_vortex": "d92f4674b68b0b562e17f93c4cb0c364f0bf4544",
+  "benchmark_driver": "4837bf9bcd4a2da24aea39d85da834cac6581534",
+  "toolchain": "nightly-2026-10-23",
+  "rustflags": "-C target-cpu=native",
+  "profile": "bench",
+  "local_path_overrides": [
+    "coldfusion",
+    "iceberg"
+  ],
+  "benchmark_driver_modifications": "CF-only vortex and vortex-arrow import aliases aligned to CF Vortex revision; global Arbor Vortex unchanged.",
+  "source_sha256": {
+    "Cargo.toml": "3cbbb9120ec13fcef475e8c08199eda0c7003af1d7848d4183b3a979eb441fe0",
+    "Cargo.lock": "a8575a54a7663273954e05ac41406f5d1e0321bc4086a8a68206dc3ef79afdc0",
+    "src/vortex_scan.rs": "5092fee09071a1f2b15e580ecd9dd3936f9a11acbca9f48fed8edb80cd8c9637",
+    "src/vortex_scan/df_scalar.rs": "f78f9e9acae12cbec4dbbe52e500d9d0b01c7f77d6088f88953f0482bb0aff03",
+    "src/vortex_scan/generic_tests.rs": "447c8811ff81e13615c5d4088b612aec73d4e458a9ecda3f05a5ed061d9871e2",
+    "src/vortex_scan/convert.rs": "0bee03d4eb41ac8e2da8a81a6de1d7ba8216b425fcb60041d0c49e72fa220a0e",
+    "src/vortex_scan/properties.rs": "9e6ba597fa26f5de4d5e3dab98fb26abc42da7e71b64302921bdc4c0dd6e0d2e",
+    "src/vortex_scan/parallel.rs": "79d736bbe957e5f643adc3b83840ef932f27fdd262eb4dcfe15e09bc70797be4",
+    "src/vortex_scan/dynamic.rs": "2547eba0b03e7de35618bc10ee8a03c1c6b88d7ef23bb64f2c4f4651bd0daed6"
+  }
+}

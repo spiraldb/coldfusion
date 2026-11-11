@@ -1,0 +1,49 @@
+{
+  "argv": [
+    "/Users/danielking/projects/coldfusion/spiraldb/target/release/engine-bench",
+    "tpcds",
+    "--iterations",
+    "3",
+    "--warmups",
+    "1",
+    "--formats",
+    "parquet",
+    "--hide-progress-bar",
+    "--threads",
+    "4",
+    "--queries",
+    "21,39,62,99,72",
+    "--opt",
+    "scale-factor=1",
+    "--opt",
+    "remote-data-dir=file:///Users/danielking/projects/coldfusion/bench-cache/vortex/vortex-bench/data/tpcds/1/",
+    "--query-engine",
+    "datafusion",
+    "--sql-timeout-secs",
+    "120",
+    "--table-prepare-timeout-secs",
+    "120",
+    "--table-format",
+    "coldfusion-vortex",
+    "--run-id",
+    "verified-after",
+    "--gh-json-v3",
+    "/Users/danielking/projects/coldfusion/bench-cache/generic-expression-pushdown/verified-after.jsonl"
+  ],
+  "provider_commit": "34045d5b61bdc927fe27d709b522008fda3fcd11",
+  "binary_sha256": "d91040bbf8fed4a3264465ba4a9c11e90e262c5a3694fec464e0d397b83de8f7",
+  "source_blobs": {
+    "src/vortex_scan/df_scalar.rs": "f78f9e9acae12cbec4dbbe52e500d9d0b01c7f77d6088f88953f0482bb0aff03",
+    "src/vortex_scan/generic_tests.rs": "447c8811ff81e13615c5d4088b612aec73d4e458a9ecda3f05a5ed061d9871e2",
+    "src/vortex_scan/convert.rs": "0bee03d4eb41ac8e2da8a81a6de1d7ba8216b425fcb60041d0c49e72fa220a0e",
+    "src/vortex_scan/properties.rs": "9e6ba597fa26f5de4d5e3dab98fb26abc42da7e71b64302921bdc4c0dd6e0d2e",
+    "src/vortex_scan/parallel.rs": "79d736bbe957e5f643adc3b83840ef932f27fdd262eb4dcfe15e09bc70797be4",
+    "src/vortex_scan/dynamic.rs": "2547eba0b03e7de35618bc10ee8a03c1c6b88d7ef23bb64f2c4f4651bd0daed6"
+  },
+  "cwd": "/Users/danielking/projects/coldfusion/bench-cache/vortex",
+  "env": {
+    "ENGINE_BENCH_SKIP_GEN": "1",
+    "TOKIO_WORKER_THREADS": "4"
+  },
+  "receipt_note": "cwd/env reconstructed from the executed Python orchestration; originally omitted from this command receipt."
+}

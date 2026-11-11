@@ -1,0 +1,22 @@
+running 18 tests
+test vortex_scan::convert::tests::decimal_negation_and_precision_or_scale_casts_stay_in_datafusion ... ok
+test vortex_scan::convert::tests::integer_overflow_uses_datafusion_arithmetic ... ok
+test vortex_scan::convert::tests::floating_predicates_stay_in_datafusion_while_arithmetic_can_push_down ... ok
+test vortex_scan::convert::tests::decimal_arithmetic_pushdown_requires_matching_unclamped_types ... ok
+test vortex_scan::convert::tests::literal_membership_conjunction_keeps_native_pruning ... ok
+test vortex_scan::generic_tests::tests::membership_rejects_volatile_siblings ... ok
+test vortex_scan::generic_tests::tests::composite_hash_membership_has_no_single_key_restriction ... ok
+test vortex_scan::generic_tests::tests::generic_projection_preserves_wrapping_and_nulls ... ok
+test vortex_scan::generic_tests::tests::eager_parent_extracts_native_widening_but_keeps_wrapping_add_in_df ... ok
+test vortex_scan::generic_tests::tests::advisory_conjunction_exposes_native_bounds_and_conservatively_relaxes_errors ... ok
+test vortex_scan::generic_tests::tests::membership_keeps_partition_case_and_unbuilt_partition_fallback ... ok
+test vortex_scan::generic_tests::tests::conditional_case_keeps_unselected_errors_unevaluated ... ok
+test vortex_scan::generic_tests::tests::unrepresentable_results_stay_in_datafusion ... ok
+test vortex_scan::generic_tests::tests::nonnull_target_field_does_not_discard_input_nulls ... ok
+test vortex_scan::generic_tests::tests::advisory_fallible_filter_is_conservative_but_exact_filter_errors ... ok
+test vortex_scan::generic_tests::tests::dynamic_hint_observes_each_generation_and_exact_live_projection_stays_in_df ... ok
+test vortex_scan::generic_tests::tests::membership_preserves_null_hashing_and_projects_only_keys ... ok
+test vortex_scan::generic_tests::tests::membership_source_observes_updates_and_rejects_rows_before_output ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.03s
+

@@ -152,6 +152,11 @@ I/O and compute runtimes.
 
 ## Benchmarks
 
+The [November 11 generic expression study](benchmarks/generic-expression-pushdown-2026-11-11/)
+compares the previous membership bridge, generic bridge, and Arbor direct on
+TPC-DS SF1 Q21/Q39/Q62/Q99, with Q72 as a regression guard.
+
+
 The final November 8, 2026 UTC local TPC-H SF10 cohort uses one locked executable
 built from committed ColdFusion `98ec669`, Iceberg `3a409b31`, and benchmark harness
 `2c44c06ba`. DataFusion is unchanged. Vortex-Iceberg and both Arbor configurations
