@@ -1,0 +1,47 @@
+[
+  {
+    "lane": "tpch-spiral-sdk",
+    "returncode": 0,
+    "seconds": 38.49348783493042,
+    "count": 22,
+    "passed": 22,
+    "sum_means_seconds": 5.614877527,
+    "failed": []
+  },
+  {
+    "lane": "tpch-coldfusion-vortex",
+    "returncode": 0,
+    "seconds": 22.077114820480347,
+    "count": 22,
+    "passed": 22,
+    "sum_means_seconds": 5.105050389,
+    "failed": []
+  },
+  {
+    "lane": "tpch-coldfusion-parquet",
+    "returncode": 0,
+    "seconds": 27.543975830078125,
+    "count": 22,
+    "passed": 22,
+    "sum_means_seconds": 6.809852763,
+    "failed": []
+  },
+  {
+    "lane": "tpch-coldfusion-lz4",
+    "returncode": 0,
+    "seconds": 55.75987410545349,
+    "count": 22,
+    "passed": 22,
+    "sum_means_seconds": 5.153851553,
+    "failed": []
+  },
+  {
+    "lane": "tpch-spiral-direct",
+    "returncode": 0,
+    "seconds": 31.62187695503235,
+    "count": 22,
+    "passed": 22,
+    "sum_means_seconds": 4.0036710153333335,
+    "failed": []
+  }
+]

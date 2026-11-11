@@ -1,0 +1,29 @@
+{
+  "argv": [
+    "/Users/danielking/projects/coldfusion/spiraldb/target/release/engine-bench",
+    "tpcds",
+    "--iterations",
+    "1",
+    "--warmups",
+    "0",
+    "--formats",
+    "vortex",
+    "--hide-progress-bar",
+    "--threads",
+    "14",
+    "--opt",
+    "scale-factor=10",
+    "--opt",
+    "remote-data-dir=file:///Users/danielking/projects/coldfusion/bench-cache/vortex/vortex-bench/data/tpcds/10/",
+    "--generate-sql-answers",
+    "--sql-answers-only",
+    "--sql-timeout-secs",
+    "120",
+    "--queries",
+    "1"
+  ],
+  "cwd": "/Users/danielking/projects/coldfusion/bench-cache/vortex",
+  "env": {
+    "TOKIO_WORKER_THREADS": "14"
+  }
+}

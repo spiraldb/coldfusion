@@ -1,0 +1,28 @@
+{
+  "argv": [
+    "cargo",
+    "+nightly-2026-10-23",
+    "-Zgit",
+    "build",
+    "--profile",
+    "bench",
+    "--target-dir",
+    "/Users/danielking/projects/coldfusion/spiraldb/target",
+    "--config",
+    "profile.bench.package.engine-bench.debug=0",
+    "--config",
+    "patch.\"https://github.com/spiraldb/coldfusion\".coldfusion.path=\"/Users/danielking/projects/coldfusion/bench-cache/coldfusion-q72-sf1/provider\"",
+    "--config",
+    "patch.\"https://github.com/spiraldb/iceberg-rust\".iceberg.path=\"/Users/danielking/projects/coldfusion/bench-cache/coldfusion-q72-sf1/iceberg/crates/iceberg\"",
+    "-p",
+    "engine-bench",
+    "--bin",
+    "engine-bench",
+    "--features",
+    "engine-bench/coldfusion",
+    "--timings",
+    "--message-format",
+    "json-render-diagnostics"
+  ],
+  "cwd": "/Users/danielking/projects/coldfusion/bench-cache/cloud-four-engine-2026-11-10/latest-consumer"
+}

@@ -152,6 +152,10 @@ I/O and compute runtimes.
 
 ## Benchmarks
 
+The [full local SF10 comparison](benchmarks/full-sf10-2026-11-11/) covers all
+22 TPC-H and 99 TPC-DS queries across both Arbor integrations and ColdFusion
+Vortex, Zstd Parquet, and LZ4_RAW Parquet. All 605 reference checks passed.
+
 The [November 11 generic expression study](benchmarks/generic-expression-pushdown-2026-11-11/)
 compares the previous membership bridge, generic bridge, and Arbor direct on
 TPC-DS SF1 Q21/Q39/Q62/Q99, with Q72 as a regression guard.
