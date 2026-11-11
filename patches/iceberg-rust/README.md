@@ -1,14 +1,14 @@
 # Iceberg Rust patch series
 
-These 17 patches contain the native Iceberg changes used by ColdFusion, based on
+These 18 patches contain the native Iceberg changes used by ColdFusion, based on
 `spiraldb/iceberg-rust` main. The provider remains in ColdFusion; this native
 workspace has no DataFusion dependency or adapter.
 
 - Repository: https://github.com/spiraldb/iceberg-rust
-- Branch: `dk/vortex-column-statistics`
+- Branch: `ngates/vortex-5e08d3a9`
 - Base: `ea48146de861ee71d32ba747ca0d182ea7746ed1`
-- Tip: `a82bafad2b6ea12fefa110fdc02e6e41a6096231`
-- Resulting tree: `5cefff877ea173ef2f2400266b56a5f21ef6d84c`
+- Tip: `53a3b2859f436f23f3be53a6661c2c9bd7706b7c`
+- Resulting tree: `411adb6d73486c333b8821bbdbfdf77771910cbc`
 
 The first nine patches preserve the previous compaction: their tree is exactly
 `7f9e7822a40c5bf67e711ac0d1cf755d23d17877`, matching the historical 25-commit tip
@@ -32,7 +32,7 @@ done
 git write-tree
 ```
 
-The resulting tree must be `5cefff877ea173ef2f2400266b56a5f21ef6d84c`. Verification replayed all 17 patches and the
+The resulting tree must be `411adb6d73486c333b8821bbdbfdf77771910cbc`. Verification replayed all 18 patches and the
 four-patch extension separately through isolated Git indexes and object stores.
 Each intermediate tree matched its source commit. No checkout or commits were
 created. The retained series has no empty commit, repeated boundary tree, or
@@ -64,8 +64,8 @@ identities in plain text.
 | 14 | `8a36a080` | Preserve inclusive manifest column bounds in scan tasks, shared across byte ranges, without engine-specific types or additional reads. |
 | 15 | `25bfc0fd` | Bind integer predicates to physical signed/unsigned widths using checked literals, range simplification and null-safe filter selection. |
 | 16 | `9ab632ff` | Reuse footer metrics for no-rewrite imports and expose complete, conservative integer column bounds through the native Vortex source. |
-
 | 17 | `a82bafad` | Align Vortex with conservative recovery of integer bounds in live DataFusion filter snapshots. |
+| 18 | `53a3b285` | Move Vortex to `5e08d3a9`, the revision SpiralDB pins, so one Vortex build serves both. |
 
 ## Native Vortex source access
 

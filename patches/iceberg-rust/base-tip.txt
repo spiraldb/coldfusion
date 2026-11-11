@@ -1,9 +1,9 @@
 repository https://github.com/spiraldb/iceberg-rust
-branch dk/vortex-column-statistics
+branch ngates/vortex-5e08d3a9
 base ea48146de861ee71d32ba747ca0d182ea7746ed1
-tip a82bafad2b6ea12fefa110fdc02e6e41a6096231
-tree 5cefff877ea173ef2f2400266b56a5f21ef6d84c
-patches 17
+tip 53a3b2859f436f23f3be53a6661c2c9bd7706b7c
+tree 411adb6d73486c333b8821bbdbfdf77771910cbc
+patches 18
 compaction_tip 45376aebbfc5fa0ba94b18837cb2443eb87a68ae
 compaction_tree 7f9e7822a40c5bf67e711ac0d1cf755d23d17877
 historical_tip 930277e0209bec6ff321d06ae9b4a0f2e794000f
