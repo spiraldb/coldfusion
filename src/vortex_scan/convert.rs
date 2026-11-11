@@ -43,6 +43,9 @@ impl ExpressionConverter for ConservativeExpressionConverter {
         expr: &Arc<dyn PhysicalExpr>,
         schema: &Schema,
     ) -> Result<Option<Expression>> {
+        if let Some(predicate) = super::runtime_filter::try_convert(expr, schema)? {
+            return Ok(Some(predicate));
+        }
         if !compatible(expr, schema)? {
             return Ok(None);
         }

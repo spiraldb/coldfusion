@@ -17,6 +17,7 @@
 
 mod convert;
 mod parallel;
+mod runtime_filter;
 
 use std::num::NonZeroUsize;
 use std::sync::{Arc, OnceLock};
