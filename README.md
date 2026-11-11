@@ -83,6 +83,25 @@ hook does not run on Vortex files. The Arrow reader evaluates live filters on
 decoded Arrow batches; it does not currently turn arbitrary `CASE` expressions
 into metadata pruning. Native Vortex scans delegate supported live expressions to
 the official Vortex adapter, which evaluates them over Vortex arrays.
+
+The native Vortex source uses one converter for static filters and computed
+projections. It extracts compatible native subtrees and embeds remaining synchronous
+DataFusion expressions as a typed, process-local `DFScalarFn`. Volatile expressions
+stay in DataFusion. Conditional branches remain together unless extraction preserves
+their evaluation domain. A small conservative tree walk marks only proven infallible
+operations as safe for speculative evaluation; unknown operations are still accepted
+inside the callback.
+
+Live join filters use generation-aware Vortex expressions and the same callback.
+An evaluation error in an advisory hint retains rows; exact expressions preserve
+DataFusion errors. Exact projections containing live predicates stay in DataFusion,
+because later snapshots may introduce unsupported or volatile expressions. Other
+fallbacks are async expressions and Arrow result types Vortex cannot safely carry.
+In particular, a callback returning a decimal stays in DataFusion because Arrow can
+produce coefficients outside the declared precision; decimal intermediates inside
+Boolean or other representable results are supported. Existing proven native decimal
+operations remain native. DataFusion itself is unchanged.
+
 The Arrow-reader scan exposes output rows, compute time, bytes read, and dynamic
 pruning through DataFusion metrics. Native Vortex scans expose the official
 Vortex execution metrics, but do not report per-query or per-partition
@@ -100,7 +119,7 @@ build sides without additional payload or Parquet metadata reads.
 
 The dependency starts from `spiraldb/iceberg-rust` main at
 `ea48146de861ee71d32ba747ca0d182ea7746ed1` and is pinned in `Cargo.toml`.
-The [17-patch series](patches/iceberg-rust/) contains nonempty native changes.
+The [18-patch series](patches/iceberg-rust/) contains nonempty native changes.
 Its first nine patches preserve the historical reader tree `930277e0`; four
 additional commits align Vortex with Arbor, improve input/output batching, expose
 a native array source, and reuse file metadata on the table IO runtime. A fifth
@@ -110,7 +129,8 @@ and null-preserving range simplification. A seventh shares footer-to-manifest
 metrics for file imports and exposes conservative integer bounds through the native
 Vortex source; missing statistics remain unknown. An eighth pins Vortex
 `e2d8b0fd`, which preserves supported integer bounds in dynamic filter snapshots
-without pushing unsupported hash lookups into the reader. The extended tip has its own tree and
+without pushing unsupported hash lookups into the reader. The ninth extension pins Vortex
+`5d6cfc1b`, adding an advisory dynamic-conversion hook for this provider. The extended tip has its own tree and
 replay proof. Cancelling experiments and the obsolete native DataFusion adapter
 remain omitted.
 

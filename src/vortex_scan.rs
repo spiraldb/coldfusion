@@ -16,8 +16,12 @@
 // under the License.
 
 mod convert;
+mod df_scalar;
+mod dynamic;
+#[cfg(test)]
+mod generic_tests;
 mod parallel;
-mod runtime_filter;
+mod properties;
 
 use std::num::NonZeroUsize;
 use std::sync::{Arc, OnceLock};
@@ -35,7 +39,7 @@ use vortex::VortexSessionDefault;
 use vortex::session::VortexSession;
 use vortex_datafusion::v2::VortexDataSource;
 
-use self::convert::ConservativeExpressionConverter;
+use self::convert::ScanExpressionConverter;
 use self::parallel::ParallelVortexSource;
 use crate::external;
 
@@ -77,7 +81,7 @@ pub(crate) async fn try_scan(
     let source = VortexDataSource::builder(Arc::new(source), session.clone())
         .with_arrow_schema(schema)
         .with_some_projection(projection.cloned())
-        .with_expression_converter(Arc::new(ConservativeExpressionConverter::new(session)))
+        .with_expression_converter(Arc::new(ScanExpressionConverter::new(session)))
         .build()
         .await
         .map_err(|error| DataFusionError::External(Box::new(error)))?;
