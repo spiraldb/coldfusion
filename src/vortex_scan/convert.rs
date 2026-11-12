@@ -22,9 +22,7 @@ use datafusion::arrow::datatypes::{DataType, Schema};
 use datafusion::common::Result;
 use datafusion::functions::core::getfield::GetFieldFunc;
 use datafusion::logical_expr::Operator;
-use datafusion::physical_expr::expressions::{
-    BinaryExpr, CastExpr, InListExpr, NegativeExpr, TryCastExpr,
-};
+use datafusion::physical_expr::expressions::{BinaryExpr, CastExpr, InListExpr, NegativeExpr};
 use datafusion::physical_expr::{PhysicalExpr, ScalarFunctionExpr};
 use vortex::expr::Expression;
 use vortex::session::VortexSession;
@@ -286,18 +284,8 @@ fn compatible(expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> Result<bool> {
     {
         return Ok(false);
     }
-    let cast = expr
-        .downcast_ref::<CastExpr>()
-        .map(|cast| (cast.expr(), cast.cast_type()))
-        .or_else(|| {
-            expr.downcast_ref::<TryCastExpr>()
-                .map(|cast| (cast.expr(), cast.cast_type()))
-        });
-    if let Some((input, target)) = cast
-        && !lossless_cast(&input.data_type(schema)?, target)
-    {
-        return Ok(false);
-    }
+    // Cast compatibility belongs to the shared Vortex converter, including supported
+    // lossy conversions. Keep no second cast allowlist here.
     Ok(true)
 }
 
@@ -334,24 +322,6 @@ fn compatible_decimal_arithmetic(binary: &BinaryExpr, schema: &Schema) -> Result
         && binary.data_type(schema)? == DataType::Decimal128(result_precision, result_scale))
 }
 
-fn lossless_cast(source: &DataType, target: &DataType) -> bool {
-    use DataType::*;
-
-    source == target
-        || matches!(
-            (source, target),
-            (Int8, Int16 | Int32 | Int64)
-                | (Int16, Int32 | Int64)
-                | (Int32, Int64)
-                | (UInt8, UInt16 | UInt32 | UInt64)
-                | (UInt16, UInt32 | UInt64)
-                | (UInt32, UInt64)
-                | (Float32, Float64)
-                | (Utf8, LargeUtf8 | Utf8View)
-                | (Binary, LargeBinary | BinaryView)
-        )
-}
-
 #[cfg(test)]
 mod tests {
     use datafusion::arrow::datatypes::Field;
@@ -360,6 +330,105 @@ mod tests {
     use vortex::VortexSessionDefault;
 
     use super::*;
+
+    #[test]
+    fn native_numeric_casts_match_datafusion_at_boundaries() {
+        use datafusion::arrow::array::{
+            ArrayRef, BooleanArray, Int64Array, UInt32Array, UInt64Array,
+        };
+        use datafusion::arrow::record_batch::RecordBatch;
+        use vortex::array::VortexSessionExecute;
+        use vortex::arrow::{ArrowSessionExt, ExecuteArrowExt};
+
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "signed",
+                Arc::new(Int64Array::from(vec![
+                    Some(i64::MIN),
+                    Some(i64::MAX),
+                    Some((1 << 53) + 1),
+                    Some(-(1 << 53) - 1),
+                    None,
+                ])) as ArrayRef,
+            ),
+            (
+                "unsigned",
+                Arc::new(UInt64Array::from(vec![
+                    Some(u64::MAX),
+                    Some(0),
+                    Some((1 << 53) + 1),
+                    Some(u64::MAX - 1),
+                    None,
+                ])) as ArrayRef,
+            ),
+            (
+                "narrow",
+                Arc::new(UInt32Array::from(vec![
+                    Some(u32::MAX),
+                    Some(0),
+                    Some(1),
+                    Some(1 << 31),
+                    None,
+                ])) as ArrayRef,
+            ),
+            (
+                "flag",
+                Arc::new(BooleanArray::from(vec![
+                    Some(true),
+                    Some(false),
+                    Some(false),
+                    Some(true),
+                    None,
+                ])) as ArrayRef,
+            ),
+        ])
+        .unwrap();
+        let session = VortexSession::default();
+        let converter = ScanExpressionConverter::new(session.clone());
+        for (name, target) in [
+            ("signed", DataType::Float64),
+            ("unsigned", DataType::Float64),
+            ("narrow", DataType::Float64),
+            ("flag", DataType::Float64),
+            ("narrow", DataType::Int64),
+        ] {
+            let column = Arc::new(Column::new(name, batch.schema().index_of(name).unwrap()));
+            let cast: Arc<dyn PhysicalExpr> = Arc::new(CastExpr::new(column, target, None));
+            let native = converter
+                .native(&cast, &batch.schema())
+                .unwrap()
+                .expect("shared converter supports this native cast");
+            let input = session
+                .arrow()
+                .from_arrow_record_batch(batch.clone(), &batch.schema())
+                .unwrap();
+            let actual = input
+                .apply(&native)
+                .unwrap()
+                .execute_arrow(
+                    Some(&cast.return_field(&batch.schema()).unwrap()),
+                    &mut session.create_execution_ctx(),
+                )
+                .unwrap();
+            let expected = cast
+                .evaluate(&batch)
+                .unwrap()
+                .into_array(batch.num_rows())
+                .unwrap();
+            assert_eq!(&actual, &expected, "{cast}");
+        }
+        // Native support is deliberately delegated to the shared converter, which
+        // still declines casts that need different failure or decimal semantics.
+        let signed = Arc::new(Column::new("signed", 0));
+        let narrowing: Arc<dyn PhysicalExpr> =
+            Arc::new(CastExpr::new(signed, DataType::Int8, None));
+        assert!(
+            converter
+                .native(&narrowing, &batch.schema())
+                .unwrap()
+                .is_none()
+        );
+    }
 
     #[test]
     fn literal_membership_conjunction_keeps_native_pruning() {

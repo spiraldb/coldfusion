@@ -72,6 +72,7 @@ use parquet::basic::Compression;
 use parquet::file::properties::{EnabledStatistics, WriterProperties};
 use tempfile::TempDir;
 use vortex::VortexSessionDefault;
+use vortex::arrow::ExecuteArrowExt;
 use vortex::session::VortexSession;
 
 const ROWS: i64 = 257;
@@ -1816,11 +1817,12 @@ async fn native_vortex_scans_preserve_parallel_queries_and_evolution() {
                 );
             }
             if query.contains("9223372036854775807") {
+                // The generic bridge evaluates wrapping arithmetic with DF inside
+                // the scan, rather than using Vortex's checked integer operation.
                 assert!(
-                    display
-                        .lines()
-                        .filter(|line| line.contains("VortexScanSource"))
-                        .all(|line| { !line.contains("9223372036854775807") }),
+                    display.lines().any(|line| line.contains("VortexScanSource")
+                        && line.contains("wrapped")
+                        && line.contains("coldfusion.datafusion_expr")),
                     "{display}"
                 );
             }
@@ -1838,6 +1840,111 @@ async fn native_vortex_scans_preserve_parallel_queries_and_evolution() {
                 "{query}, views={views}"
             );
         }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn native_vortex_numeric_casts_push_into_filters_and_projections() {
+    let mut fixture = Fixture::new(false).await;
+    let schema = arrow_schema_to_schema_auto_assign_ids(&Schema::new(vec![
+        Field::new("id", DataType::Int64, false),
+        Field::new("n", DataType::Int64, true),
+        Field::new("flag", DataType::Boolean, true),
+    ]))
+    .unwrap();
+    fixture.table = fixture
+        .catalog
+        .create_table(
+            &NamespaceIdent::new("test".to_owned()),
+            TableCreation::builder()
+                .name("numeric_casts".to_owned())
+                .schema(schema)
+                .build(),
+        )
+        .await
+        .unwrap();
+    let values = [
+        Some(i64::MIN),
+        Some(i64::MAX),
+        Some((1 << 53) + 1),
+        Some(-(1 << 53) - 1),
+        Some(0),
+        None,
+    ];
+    fixture.batch = RecordBatch::try_new(
+        Arc::new(schema_to_arrow_schema(fixture.table.metadata().current_schema()).unwrap()),
+        vec![
+            Arc::new(Int64Array::from_iter_values(0..ROWS)),
+            Arc::new(Int64Array::from_iter(
+                (0..ROWS as usize).map(|row| values[row % values.len()]),
+            )),
+            Arc::new(BooleanArray::from_iter(
+                (0..ROWS).map(|row| (row % 5 != 0).then_some(row % 2 == 0)),
+            )),
+        ],
+    )
+    .unwrap();
+    let path = format!("{}/casts.vortex", fixture.table.metadata().location());
+    let batch = fixture.batch.clone();
+    fixture
+        .write_batch(&path, DataFileFormat::Vortex, &batch)
+        .await;
+    let context = fixture.context();
+    context
+        .register_table(
+            "ice",
+            Arc::new(
+                IcebergTableProvider::try_new(fixture.table.clone())
+                    .unwrap()
+                    .with_native_vortex_scan(true)
+                    .with_exact_filter_pushdown(true),
+            ),
+        )
+        .unwrap();
+    context
+        .register_table(
+            "reference",
+            Arc::new(MemTable::try_new(batch.schema(), vec![vec![batch]]).unwrap()),
+        )
+        .unwrap();
+    for query in [
+        "SELECT id, CAST(n AS DOUBLE) AS rounded, CAST(flag AS DOUBLE) AS flag_number FROM {} ORDER BY id",
+        "SELECT id FROM {} WHERE CAST(flag AS DOUBLE) IS NOT NULL ORDER BY id",
+    ] {
+        let plan = context
+            .sql(&query.replace("{}", "ice"))
+            .await
+            .unwrap()
+            .create_physical_plan()
+            .await
+            .unwrap();
+        let display = displayable(plan.as_ref()).indent(true).to_string();
+        let scan = display
+            .lines()
+            .find(|line| line.contains("VortexScanSource"))
+            .expect("native Vortex source");
+        assert!(
+            scan.contains("cast("),
+            "casts must execute natively in the scan: {display}"
+        );
+        assert!(
+            !scan.contains("coldfusion.datafusion_expr"),
+            "casts must not use the Arrow callback: {display}"
+        );
+        let actual = collect(plan, context.task_ctx()).await.unwrap();
+        let expected = context
+            .sql(&query.replace("{}", "reference"))
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+        assert_eq!(actual[0].schema(), expected[0].schema());
+        assert_eq!(
+            pretty_format_batches(&actual).unwrap().to_string(),
+            pretty_format_batches(&expected).unwrap().to_string(),
+            "{query}"
+        );
     }
 }
 
@@ -2151,10 +2258,7 @@ async fn native_vortex_source_combines_selection_ranges_and_limits() {
         let mut context = session.create_execution_ctx();
         let mut rows = Vec::new();
         for array in arrays.into_iter().flatten() {
-            let arrow = session
-                .arrow()
-                .execute_arrow(array, Some(&field), &mut context)
-                .unwrap();
+            let arrow = array.execute_arrow(Some(&field), &mut context).unwrap();
             let batch = RecordBatch::from(arrow.as_struct());
             rows.extend(
                 batch

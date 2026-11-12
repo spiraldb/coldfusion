@@ -1,11 +1,11 @@
 {
   "repository": "https://github.com/spiraldb/iceberg-rust",
-  "branch": "dk/generic-expression-vortex",
+  "branch": "dk/current-vortex-casts",
   "base_commit": "ea48146de861ee71d32ba747ca0d182ea7746ed1",
   "base_tree": "faa666dbf8ad321fcbeb3c2d5abd643815575d30",
-  "tip_commit": "32ac258f766b0404eb768e30b8851b10e956d9fa",
-  "tip_tree": "3a8cf82e4e57da85cad919abda185eb48439773c",
-  "patch_count": 18,
+  "tip_commit": "bec244141d9f6cda46406b95d5f6aa3764d84a56",
+  "tip_tree": "1dd889c9aa011d5ea56b8594dcb8996ca286d6e3",
+  "patch_count": 19,
   "patches": [
     {
       "patch": "0001-Split-Parquet-scans-using-physical-row-group-offsets.patch",
@@ -132,6 +132,12 @@
       "commit": "32ac258f766b0404eb768e30b8851b10e956d9fa",
       "subject": "Align Vortex types with the dynamic converter extension",
       "sha256": "9f579daaf0533f8a1096b4e8b329c14860db3c0e3b391febc53e06059c64b8fc"
+    },
+    {
+      "patch": "0019-Align-native-readers-with-current-Vortex-Arrow-export.patch",
+      "commit": "bec244141d9f6cda46406b95d5f6aa3764d84a56",
+      "subject": "Align native readers with current Vortex Arrow export",
+      "sha256": "ade118afcb97f18ba5fd429c384fa90c0f3a84dca50aa5687990e3713bcdd73a"
     }
   ],
   "compaction": {
@@ -256,8 +262,8 @@
   },
   "verification": {
     "method": "Sequential git apply --cached through an isolated Git index and object directory under ignored diagnostics, using native objects read-only as alternates; git write-tree matches each commit tree. No checkout, commits, shared index or native object writes.",
-    "verified_utc": "2026-11-11T20:29:09.110786+00:00",
-    "applied_tree": "3a8cf82e4e57da85cad919abda185eb48439773c",
+    "verified_utc": "2026-11-12T17:02:01.514447+00:00",
+    "applied_tree": "1dd889c9aa011d5ea56b8594dcb8996ca286d6e3",
     "matches_tip_tree": true,
     "first_nine_applied_tree": "7f9e7822a40c5bf67e711ac0d1cf755d23d17877",
     "first_nine_match_historical_tree": true,
@@ -300,6 +306,15 @@
     "vortex_commit": "5d6cfc1bdccb4dcf90e4812fcc5fcbc5a9ef6a6a",
     "patch_count": 1,
     "applied_tree": "3a8cf82e4e57da85cad919abda185eb48439773c",
+    "matches_tip_tree": true
+  },
+  "current_vortex_cast_extension": {
+    "base_commit": "32ac258f766b0404eb768e30b8851b10e956d9fa",
+    "tip_commit": "bec244141d9f6cda46406b95d5f6aa3764d84a56",
+    "vortex_commit": "32f0a47ab62157a635203b5e885740295ff86c6a",
+    "upstream_vortex_commit": "94babf76f41f5f3c1d4456a8aab527ff615b470e",
+    "patch_count": 1,
+    "applied_tree": "1dd889c9aa011d5ea56b8594dcb8996ca286d6e3",
     "matches_tip_tree": true
   }
 }

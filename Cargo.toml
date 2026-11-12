@@ -41,11 +41,11 @@ include = [
 async-trait = "0.1.89"
 datafusion = { version = "=55.2.0", default-features = false, features = ["parquet"] }
 futures = "0.3"
-iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "32ac258f766b0404eb768e30b8851b10e956d9fa", default-features = false }
+iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "bec244141d9f6cda46406b95d5f6aa3764d84a56", default-features = false }
 parquet = "=59.3.2"
 tokio = { version = "1.47", default-features = false, features = ["rt-multi-thread", "sync"] }
-vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "5d6cfc1bdccb4dcf90e4812fcc5fcbc5a9ef6a6a", features = ["tokio"] }
-vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "5d6cfc1bdccb4dcf90e4812fcc5fcbc5a9ef6a6a", default-features = false }
+vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", features = ["tokio"] }
+vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", default-features = false }
 
 [dev-dependencies]
 datafusion = { version = "=55.2.0", default-features = false, features = ["sql"] }

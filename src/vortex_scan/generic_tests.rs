@@ -36,7 +36,7 @@ mod tests {
     use datafusion::physical_plan::joins::{HashExpr, HashTableLookupExpr, Map, SeededRandomState};
     use vortex::VortexSessionDefault;
     use vortex::array::VortexSessionExecute;
-    use vortex::arrow::ArrowSessionExt;
+    use vortex::arrow::{ArrowSessionExt, ExecuteArrowExt};
     use vortex::expr::Expression;
     use vortex::session::VortexSession;
     use vortex_datafusion::convert::ExpressionConverter;
@@ -93,10 +93,8 @@ mod tests {
             .from_arrow_record_batch(batch.clone(), &batch.schema())
             .unwrap();
         let result = array.apply(expression).unwrap();
-        session
-            .arrow()
+        result
             .execute_arrow(
-                result,
                 Some(&Field::new("result", DataType::Boolean, true)),
                 &mut session.create_execution_ctx(),
             )
@@ -419,10 +417,10 @@ mod tests {
             .arrow()
             .from_arrow_record_batch(batch.clone(), &batch.schema())
             .unwrap();
-        session
-            .arrow()
+        array
+            .apply(expr)
+            .unwrap()
             .execute_arrow(
-                array.apply(expr).unwrap(),
                 Some(&Field::new("result", dtype, true)),
                 &mut session.create_execution_ctx(),
             )
@@ -513,8 +511,7 @@ mod tests {
             .from_arrow_record_batch(batch.clone(), &batch.schema())
             .unwrap();
         let failed = array.apply(&exact).and_then(|array| {
-            session.arrow().execute_arrow(
-                array,
+            array.execute_arrow(
                 Some(&Field::new("result", DataType::Boolean, true)),
                 &mut session.create_execution_ctx(),
             )

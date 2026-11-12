@@ -119,7 +119,7 @@ build sides without additional payload or Parquet metadata reads.
 
 The dependency starts from `spiraldb/iceberg-rust` main at
 `ea48146de861ee71d32ba747ca0d182ea7746ed1` and is pinned in `Cargo.toml`.
-The [18-patch series](patches/iceberg-rust/) contains nonempty native changes.
+The [19-patch series](patches/iceberg-rust/) contains nonempty native changes.
 Its first nine patches preserve the historical reader tree `930277e0`; four
 additional commits align Vortex with Arbor, improve input/output batching, expose
 a native array source, and reuse file metadata on the table IO runtime. A fifth
@@ -130,7 +130,11 @@ metrics for file imports and exposes conservative integer bounds through the nat
 Vortex source; missing statistics remain unknown. An eighth pins Vortex
 `e2d8b0fd`, which preserves supported integer bounds in dynamic filter snapshots
 without pushing unsupported hash lookups into the reader. The ninth extension pins Vortex
-`5d6cfc1b`, adding an advisory dynamic-conversion hook for this provider. The extended tip has its own tree and
+`5d6cfc1b`, adding an advisory dynamic-conversion hook for this provider. The tenth
+extension updates to current Vortex (`94babf7` plus that hook at `32f0a47`) and
+adapts the Arrow export API. Native casts use the shared Vortex/DataFusion
+converter, including integer/Boolean-to-Float64 rounding and lossless unsigned-to-signed
+widening; unsupported casts retain the DataFusion fallback. The extended tip has its own tree and
 replay proof. Cancelling experiments and the obsolete native DataFusion adapter
 remain omitted.
 

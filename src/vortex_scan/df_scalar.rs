@@ -27,7 +27,7 @@ use datafusion::common::{DataFusionError, Result};
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_expr::expressions::{Column, Literal};
 use vortex::array::{ArrayRef, ExecutionCtx};
-use vortex::arrow::ArrowSessionExt;
+use vortex::arrow::{ArrowSessionExt, ExecuteArrowExt};
 use vortex::dtype::DType;
 use vortex::error::{VortexResult, vortex_ensure, vortex_err};
 use vortex::expr::{Expression, get_item, root};
@@ -285,7 +285,7 @@ impl ScalarFnVTable for DFScalarFn {
             .fields()
             .iter()
             .enumerate()
-            .map(|(index, field)| arrow.execute_arrow(args.get(index)?, Some(field), ctx))
+            .map(|(index, field)| args.get(index)?.execute_arrow(Some(field), ctx))
             .collect::<VortexResult<Vec<_>>>()?;
         let batch = RecordBatch::try_new_with_options(
             options.schema.clone(),
