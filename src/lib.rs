@@ -45,7 +45,6 @@ pub struct IcebergTableProvider {
     table: Table,
     schema: SchemaRef,
     view_types: bool,
-    vortex_layout_splits: bool,
     native_vortex_scan: bool,
     native_vortex_cache: OnceLock<VortexScanCache>,
     exact_filter_pushdown: bool,
@@ -101,19 +100,11 @@ impl IcebergTableProvider {
             table,
             schema,
             view_types,
-            vortex_layout_splits: true,
             native_vortex_scan: true,
             native_vortex_cache: OnceLock::new(),
             exact_filter_pushdown: true,
             exact_filter_columns,
         })
-    }
-
-    /// Filters Vortex layout batches before slicing the Arrow output batches.
-    /// Enabled by default.
-    pub fn with_vortex_layout_splits(mut self, enabled: bool) -> Self {
-        self.vortex_layout_splits = enabled;
-        self
     }
 
     /// Uses Vortex's native expression scan interface for supported Iceberg tasks.
@@ -205,8 +196,7 @@ impl TableProvider for IcebergTableProvider {
                 !filters.is_empty(),
                 state.config_options().execution.parquet.enable_page_index,
             )?
-            .with_view_types(self.view_types)
-            .with_vortex_layout_splits(self.vortex_layout_splits),
+            .with_view_types(self.view_types),
         ))
     }
 

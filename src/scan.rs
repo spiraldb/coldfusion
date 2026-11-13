@@ -55,7 +55,6 @@ pub(crate) struct IcebergScan {
     batch_size: usize,
     enable_page_index: bool,
     view_types: bool,
-    vortex_layout_splits: bool,
     metrics: ExecutionPlanMetricsSet,
     statistics: Arc<Statistics>,
     dynamic_filters: Vec<Arc<dyn PhysicalExpr>>,
@@ -154,7 +153,6 @@ impl IcebergScan {
             batch_size,
             enable_page_index,
             view_types: false,
-            vortex_layout_splits: false,
             metrics: ExecutionPlanMetricsSet::new(),
             statistics: Arc::new(statistics),
             dynamic_filters: Vec::new(),
@@ -163,11 +161,6 @@ impl IcebergScan {
 
     pub(crate) fn with_view_types(mut self, view_types: bool) -> Self {
         self.view_types = view_types;
-        self
-    }
-
-    pub(crate) fn with_vortex_layout_splits(mut self, enabled: bool) -> Self {
-        self.vortex_layout_splits = enabled;
         self
     }
 }
@@ -262,7 +255,6 @@ impl ExecutionPlan for IcebergScan {
             .with_data_file_concurrency_limit(1)
             .with_row_selection_enabled(self.enable_page_index)
             .with_view_types(self.view_types)
-            .with_vortex_layout_splits(self.vortex_layout_splits)
             .with_background_reads(should_read_in_background(self.partitions.len()))
             .with_compute_time_observer(move |elapsed| compute.add_duration(elapsed));
         if !self.dynamic_filters.is_empty() {

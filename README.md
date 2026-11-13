@@ -64,8 +64,8 @@ Supported required-field predicates use exact pushdown by default, removing
 redundant DataFusion residuals. Supported Vortex scans use the native array source
 and reuse opened file metadata; other scans use the Arrow reader, with Vortex
 layout batches filtered before Arrow output is sliced. The
-`with_exact_filter_pushdown`, `with_native_vortex_scan`, and
-`with_vortex_layout_splits` methods can disable these paths independently.
+`with_exact_filter_pushdown` and `with_native_vortex_scan` methods can disable
+those optimizations independently. Vortex layout batching is unconditional.
 
 Static primitive predicates prune manifests, row groups, and Parquet pages.
 Page-statistics pruning follows DataFusion's
