@@ -179,14 +179,14 @@ impl Extraction<'_> {
         if expr.is::<Literal>() {
             return Ok(expr.clone());
         }
-        if child && allow_native {
-            if let Some(native) = self
+        if child
+            && allow_native
+            && let Some(native) = self
                 .converter
                 .native_with(expr, self.schema, self.candidates)?
-                && (self.mode == Mode::Exact || native_infallible(&native))
-            {
-                return self.input(expr, native);
-            }
+            && (self.mode == Mode::Exact || native_infallible(&native))
+        {
+            return self.input(expr, native);
         }
         let eager = allow_native && !properties::conditional(expr);
         let children = expr
