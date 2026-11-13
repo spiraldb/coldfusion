@@ -13,3 +13,6 @@ target/
 /benchmark-results/
 /benchmark-results.jsonl
 /profiles/
+
+# Dependency patch exports belong in their owning repository.
+/patches/

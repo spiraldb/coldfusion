@@ -115,32 +115,12 @@ Int-to-Long promotion. Missing bounds remain unknown; distinct counts and null
 counts are not inferred. These bounds help DataFusion choose join order and
 build sides without additional payload or Parquet metadata reads.
 
-## Iceberg patches
+## Iceberg dependency
 
-The dependency starts from `spiraldb/iceberg-rust` main at
-`ea48146de861ee71d32ba747ca0d182ea7746ed1` and is pinned in `Cargo.toml`.
-The [19-patch series](patches/iceberg-rust/) contains nonempty native changes.
-Its first nine patches preserve the historical reader tree `930277e0`; four
-additional commits align Vortex with Arbor, improve input/output batching, expose
-a native array source, and reuse file metadata on the table IO runtime. A fifth
-exposes manifest bounds on scan tasks. A sixth reconciles integer predicate
-literals with the physical Vortex type, including signed/unsigned boundaries
-and null-preserving range simplification. A seventh shares footer-to-manifest
-metrics for file imports and exposes conservative integer bounds through the native
-Vortex source; missing statistics remain unknown. An eighth pins Vortex
-`e2d8b0fd`, which preserves supported integer bounds in dynamic filter snapshots
-without pushing unsupported hash lookups into the reader. The ninth extension pins Vortex
-`5d6cfc1b`, adding an advisory dynamic-conversion hook for this provider. The tenth
-extension updates to current Vortex (`94babf7` plus that hook at `32f0a47`) and
-adapts the Arrow export API. Native casts use the shared Vortex/DataFusion
-converter, including integer/Boolean-to-Float64 rounding and lossless unsigned-to-signed
-widening; unsupported casts retain the DataFusion fallback. The extended tip has its own tree and
-replay proof. Cancelling experiments and the obsolete native DataFusion adapter
-remain omitted.
-
-The series includes Parquet split ownership, promoted-literal and page-bound
-fixes, runtime and cancellation support, and generic reader hooks. DataFusion
-expression adaptation stays in this repository.
+Native reader changes are maintained in
+[spiraldb/iceberg-rust](https://github.com/spiraldb/iceberg-rust).
+`Cargo.toml` and `Cargo.lock` pin the Git revision Cargo builds directly.
+DataFusion expression adaptation stays in this repository.
 
 ## Validation
 
