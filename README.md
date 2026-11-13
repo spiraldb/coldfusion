@@ -40,16 +40,12 @@ fn register(table: Table) -> Result<SessionContext> {
 Scans expose at least two output partitions, using the session target when
 larger. Each partition owns its reader stream and disjoint Parquet row groups
 or Vortex row ranges.
-Small files can leave partitions empty. Keep the table's configured runtimes
-alive while queries execute. Its I/O runtime must be driven; entering its I/O
-context does not drive a current-thread runtime's reactor. Background decoding
-also uses the table's CPU executor.
+Small files can leave partitions empty. Readers decode on DataFusion's query
+workers. Run queries on a Tokio runtime with I/O and timers enabled; foreground
+Parquet reads use the caller's runtime. Native Vortex scans reuse file handles
+opened on the table's configured I/O runtime. Keep that runtime alive and driven
+while queries use the cached files.
 
-The Arrow reader decodes on DataFusion's workers when they cover the smaller of
-the output partition count and available CPU count. Smaller query runtimes use
-the table's CPU executor with bounded prefetching and cancellation on consumer
-drop. Native Vortex scans use the official Vortex DataSource and are polled on
-DataFusion's workers, independently of that Arrow-reader offload policy.
 Native Vortex scans retain parallel outputs through optimizer rewrites. Limits
 and ordering stay above the scan in DataFusion rather than collapsing it to one
 output partition.
@@ -57,8 +53,7 @@ output partition.
 The provider retains the loaded schema and snapshot. Construct another provider
 to observe catalog changes. Reads use Iceberg's field-ID projection, schema
 evolution, defaults, and positional and equality delete handling. Output uses
-canonical Iceberg Arrow types, including `Utf8` and `LargeBinary`. View types are
-available through `try_new_with_view_types` and remain opt-in.
+canonical Iceberg Arrow types, including `Utf8` and `LargeBinary`.
 
 Supported required-field predicates use exact pushdown by default, removing
 redundant DataFusion residuals. Supported Vortex scans use the native array source

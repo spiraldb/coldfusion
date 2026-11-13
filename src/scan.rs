@@ -54,18 +54,9 @@ pub(crate) struct IcebergScan {
     properties: Arc<PlanProperties>,
     batch_size: usize,
     enable_page_index: bool,
-    view_types: bool,
     metrics: ExecutionPlanMetricsSet,
     statistics: Arc<Statistics>,
     dynamic_filters: Vec<Arc<dyn PhysicalExpr>>,
-}
-
-fn should_read_in_background(partitions: usize) -> bool {
-    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-        return true;
-    };
-    let available_cores = std::thread::available_parallelism().map_or(1, usize::from);
-    runtime.metrics().num_workers() < partitions.min(available_cores)
 }
 
 impl IcebergScan {
@@ -152,16 +143,10 @@ impl IcebergScan {
             )),
             batch_size,
             enable_page_index,
-            view_types: false,
             metrics: ExecutionPlanMetricsSet::new(),
             statistics: Arc::new(statistics),
             dynamic_filters: Vec::new(),
         })
-    }
-
-    pub(crate) fn with_view_types(mut self, view_types: bool) -> Self {
-        self.view_types = view_types;
-        self
     }
 }
 
@@ -169,12 +154,11 @@ impl DisplayAs for IcebergScan {
     fn fmt_as(&self, _: DisplayFormatType, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "IcebergScan: partitions={}, tasks={}, dynamic_filters={}, page_index={}, view_types={}",
+            "IcebergScan: partitions={}, tasks={}, dynamic_filters={}, page_index={}",
             self.partitions.len(),
             self.partitions.iter().map(Vec::len).sum::<usize>(),
             self.dynamic_filters.len(),
             self.enable_page_index,
-            self.view_types,
         )
     }
 }
@@ -247,16 +231,12 @@ impl ExecutionPlan for IcebergScan {
             })?
             .clone();
         let baseline = BaselineMetrics::new(&self.metrics, partition);
-        let compute = baseline.elapsed_compute().clone();
         let mut reader = self
             .table
             .reader_builder()
             .with_batch_size(self.batch_size)
             .with_data_file_concurrency_limit(1)
-            .with_row_selection_enabled(self.enable_page_index)
-            .with_view_types(self.view_types)
-            .with_background_reads(should_read_in_background(self.partitions.len()))
-            .with_compute_time_observer(move |elapsed| compute.add_duration(elapsed));
+            .with_row_selection_enabled(self.enable_page_index);
         if !self.dynamic_filters.is_empty() {
             let filters = self.dynamic_filters.clone();
             let schema = self.schema();

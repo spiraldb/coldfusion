@@ -34,7 +34,7 @@ use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
 use datafusion::physical_plan::ExecutionPlan;
 /// Iceberg APIs from the revision used by this provider.
 pub use iceberg;
-use iceberg::arrow::{VortexScanCache, schema_to_arrow_schema, schema_with_view_types};
+use iceberg::arrow::{VortexScanCache, schema_to_arrow_schema};
 use iceberg::table::Table;
 
 /// Exposes an immutable Iceberg snapshot as parallel Parquet and Vortex scans.
@@ -44,7 +44,6 @@ use iceberg::table::Table;
 pub struct IcebergTableProvider {
     table: Table,
     schema: SchemaRef,
-    view_types: bool,
     native_vortex_scan: bool,
     native_vortex_cache: OnceLock<VortexScanCache>,
     exact_filter_pushdown: bool,
@@ -54,14 +53,6 @@ pub struct IcebergTableProvider {
 impl IcebergTableProvider {
     /// Creates a provider for the current schema and snapshot of `table`.
     pub fn try_new(table: Table) -> Result<Self> {
-        Self::try_new_with_view_types(table, false)
-    }
-
-    /// Creates a provider with optional top-level string and binary view arrays.
-    ///
-    /// Nested fields retain their canonical Iceberg Arrow types. Every scan uses
-    /// the selected output types for both Parquet and Vortex data files.
-    pub fn try_new_with_view_types(table: Table, view_types: bool) -> Result<Self> {
         // Required fields without initial defaults must be physically present in
         // valid Iceberg files. Check history by ID so renames retain eligibility.
         let exact_filter_columns = if table
@@ -91,15 +82,10 @@ impl IcebergTableProvider {
             HashSet::new()
         };
         let schema = schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?;
-        let schema = Arc::new(if view_types {
-            schema_with_view_types(&schema)
-        } else {
-            schema
-        });
+        let schema = Arc::new(schema);
         Ok(Self {
             table,
             schema,
-            view_types,
             native_vortex_scan: true,
             native_vortex_cache: OnceLock::new(),
             exact_filter_pushdown: true,
@@ -186,18 +172,15 @@ impl TableProvider for IcebergTableProvider {
         {
             return Ok(plan);
         }
-        Ok(Arc::new(
-            scan::IcebergScan::try_new(
-                self.table.clone(),
-                schema,
-                tasks,
-                state.config().target_partitions(),
-                state.config().batch_size(),
-                !filters.is_empty(),
-                state.config_options().execution.parquet.enable_page_index,
-            )?
-            .with_view_types(self.view_types),
-        ))
+        Ok(Arc::new(scan::IcebergScan::try_new(
+            self.table.clone(),
+            schema,
+            tasks,
+            state.config().target_partitions(),
+            state.config().batch_size(),
+            !filters.is_empty(),
+            state.config_options().execution.parquet.enable_page_index,
+        )?))
     }
 
     fn supports_filters_pushdown(
