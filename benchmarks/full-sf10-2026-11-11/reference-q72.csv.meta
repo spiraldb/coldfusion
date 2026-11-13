@@ -1,7 +1,0 @@
-reference_engine=datafusion
-reference_version=3
-engine_version=55.2.0
-vortex_revision=
-query_sha256=9d91ecdc86b06f6e33c5bc25b10803644d6096a3b5ef5c401877324002855a81
-data_path=/Users/danielking/projects/coldfusion/bench-cache/vortex/vortex-bench/data/tpcds/10/parquet/
-decimal_scales=[null,null,null,null,null,null]

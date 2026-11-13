@@ -6,3 +6,10 @@ target/
 /spiraldb/
 /.gitmodules
 /AGENTS.md
+
+# Generated benchmark artifacts belong outside the source history.
+/benchmarks/
+/benchmark-artifacts/
+/benchmark-results/
+/benchmark-results.jsonl
+/profiles/
