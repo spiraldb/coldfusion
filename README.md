@@ -76,6 +76,11 @@ inside the callback.
 Vortex and mixed-format scans use generation-aware live join filters and the same
 callback. Parquet-only scans push native dynamic bounds; expensive optional
 CASE/hash callbacks remain in DataFusion, which enforces the complete filter.
+After three nonempty evaluations retain every row, an opaque advisory callback
+may return true until its dynamic generation changes. The join still enforces
+the exact predicate. This heuristic avoids repeatedly evaluating redundant
+CASE/hash hints. Selective results restart sampling before the callback switches
+off; a new dynamic generation always resumes evaluation.
 Static filter and projection callbacks are supported for both formats. When files
 have row deletes, unproven fallible filters stay in DataFusion above the resolved
 scan: layout filters may evaluate rows before applying a selection. Projections

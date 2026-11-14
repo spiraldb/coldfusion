@@ -571,6 +571,57 @@ mod tests {
         }
     }
     #[test]
+    fn unselective_advisory_membership_resumes_after_a_dynamic_update() {
+        let batch = input();
+        let all = lookup(
+            vec![Some(1), Some(2), None, Some(3), Some(4), Some(5)],
+            1,
+            17,
+        );
+        let dynamic = Arc::new(DynamicFilterPhysicalExpr::new(
+            vec![Arc::new(Column::new("id", 1))],
+            all,
+        ));
+        let expr: Arc<dyn PhysicalExpr> = dynamic.clone();
+        let converted = ScanExpressionConverter::new(VortexSession::default())
+            .try_convert_dynamic(&expr, &batch.schema())
+            .unwrap()
+            .unwrap();
+        for _ in 0..4 {
+            assert_eq!(
+                evaluate(&converted, &batch)
+                    .as_any()
+                    .downcast_ref::<BooleanArray>()
+                    .unwrap()
+                    .true_count(),
+                batch.num_rows()
+            );
+        }
+        let other = RecordBatch::try_new(batch.schema(), vec![
+            batch.column(0).clone(),
+            Arc::new(Int64Array::from(vec![999; batch.num_rows()])),
+        ])
+        .unwrap();
+        assert_eq!(
+            evaluate(&converted, &other)
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap()
+                .true_count(),
+            other.num_rows()
+        );
+        dynamic.update(lookup(vec![Some(2)], 1, 17)).unwrap();
+        assert_eq!(
+            evaluate(&converted, &batch)
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap()
+                .true_count(),
+            1
+        );
+    }
+
+    #[test]
     fn unrepresentable_results_stay_in_datafusion() {
         let batch = input();
         let duration: Arc<dyn PhysicalExpr> =

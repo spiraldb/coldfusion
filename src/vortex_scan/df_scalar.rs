@@ -19,18 +19,21 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 
-use datafusion::arrow::array::BooleanArray;
+use datafusion::arrow::array::{Array, BooleanArray};
 use datafusion::arrow::datatypes::{FieldRef, Schema, SchemaRef};
 use datafusion::arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use datafusion::common::{DataFusionError, Result};
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_expr::expressions::{Column, Literal};
-use vortex::array::{ArrayRef, ExecutionCtx};
+use vortex::array::arrays::ConstantArray;
+use vortex::array::{ArrayRef, ExecutionCtx, IntoArray};
 use vortex::arrow::{ArrowSessionExt, ExecuteArrowExt};
 use vortex::dtype::DType;
 use vortex::error::{VortexResult, vortex_ensure, vortex_err};
 use vortex::expr::{Expression, get_item, root};
+use vortex::scalar::Scalar;
 use vortex::scalar_fn::{
     Arity, ChildName, ExecutionArgs, ScalarFnId, ScalarFnVTable, ScalarFnVTableExt,
 };
@@ -92,6 +95,7 @@ pub(super) fn lower(
         input_dtypes,
         infallible,
         mode,
+        all_true_batches: (mode == Mode::Hint).then(|| Arc::new(AtomicU8::new(0))),
     };
     Expression::try_new(DFScalarFn.bind(options), extraction.inputs)
         .map(Some)
@@ -222,6 +226,8 @@ struct Options {
     input_dtypes: Vec<DType>,
     infallible: bool,
     mode: Mode,
+    // Dynamic snapshots construct fresh options, so a new generation starts sampling again.
+    all_true_batches: Option<Arc<AtomicU8>>,
 }
 impl PartialEq for Options {
     fn eq(&self, other: &Self) -> bool {
@@ -278,6 +284,17 @@ impl ScalarFnVTable for DFScalarFn {
         args: &dyn ExecutionArgs,
         ctx: &mut ExecutionCtx,
     ) -> VortexResult<ArrayRef> {
+        if options
+            .all_true_batches
+            .as_ref()
+            .is_some_and(|count| count.load(Ordering::Relaxed) >= 3)
+        {
+            return Ok(ConstantArray::new(
+                Scalar::bool(true, options.dtype.nullability()),
+                args.row_count(),
+            )
+            .into_array());
+        }
         let session = ctx.session().clone();
         let arrow = session.arrow();
         let columns = options
@@ -307,6 +324,18 @@ impl ScalarFnVTable for DFScalarFn {
             result.data_type() == options.output.data_type(),
             "DF expression returned an unexpected Arrow type"
         );
+        if let Some(count) = &options.all_true_batches
+            && let Some(mask) = result.as_any().downcast_ref::<BooleanArray>()
+            && !mask.is_empty()
+        {
+            if mask.true_count() == mask.len() {
+                let _ = count.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+                    Some(count.saturating_add(1))
+                });
+            } else {
+                count.store(0, Ordering::Relaxed);
+            }
+        }
         arrow.from_arrow_array(result, &options.output)
     }
     fn is_infallible(&self, options: &Options) -> bool {
