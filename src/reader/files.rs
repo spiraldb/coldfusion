@@ -37,9 +37,11 @@ use vortex::error::{VortexResult, vortex_err};
 use vortex::file::{OpenOptionsSessionExt, VortexFile};
 use vortex::io::VortexReadAt;
 use vortex::layout::LayoutReaderRef;
+use vortex::layout::scan::split_by::SplitBy;
 use vortex::scan::DataSourceRef;
 use vortex::session::VortexSession;
 use vortex_parquet::file::FileHandle;
+use vortex_parquet::options::ReaderOptions;
 use vortex_parquet::{OpenedParquetFile, ParquetFormat};
 
 use super::to_iceberg_error;
@@ -58,6 +60,14 @@ enum OpenedFormat {
     Parquet(OpenedParquetFile),
 }
 impl OpenedFile {
+    pub(super) fn scan_splits(&self) -> SplitBy {
+        match self.format {
+            // Subdividing a Parquet row group would decode its pages repeatedly.
+            OpenedFormat::Parquet(_) => SplitBy::Layout,
+            OpenedFormat::Vortex(_) => SplitBy::default(),
+        }
+    }
+
     pub(super) fn for_scan(&self, session: &VortexSession) -> Result<Arc<Self>> {
         let reader = match &self.format {
             OpenedFormat::Vortex(file) => file.layout_reader(),
@@ -96,7 +106,8 @@ impl FileCache {
             io,
             runtime,
             session,
-            parquet: ParquetFormat::new(),
+            parquet: ParquetFormat::new()
+                .with_options(ReaderOptions::from_env().with_arrow_projection_decoding()),
             files: Cache::new(128),
         })
     }

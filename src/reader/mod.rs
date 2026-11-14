@@ -50,7 +50,6 @@ use vortex::expr::stats::{Precision, Stat};
 use vortex::expr::transform::replace;
 use vortex::expr::{BoundExpression, Expression, and_collect, root};
 use vortex::layout::scan::scan_builder::ScanBuilder;
-use vortex::layout::scan::split_by::SplitBy;
 use vortex::scalar::Scalar;
 use vortex::scan::selection::Selection;
 use vortex::scan::{
@@ -297,7 +296,7 @@ impl DataSource for IcebergSource {
             let scan = ScanBuilder::new(task.session.clone(), task.file.reader.clone())
                 .with_projection(projection.clone())
                 .with_some_filter(filter.clone())
-                .with_split_by(SplitBy::Layout);
+                .with_split_by(task.file.scan_splits());
             let boundaries = scan.full_file_splits()?;
             for rows in boundaries.windows(2).map(|w| w[0]..w[1]) {
                 let accepted = request
@@ -410,7 +409,7 @@ impl Partition for TaskPartition {
             .with_row_range(self.rows)
             .with_selection(self.selection)
             .with_ordered(self.ordered)
-            .with_split_by(SplitBy::Layout);
+            .with_split_by(self.task.file.scan_splits());
         if let Some(limit) = self.limit {
             scan = scan.with_limit(limit);
         }

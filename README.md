@@ -39,8 +39,8 @@ fn register(table: Table) -> Result<SessionContext> {
 ## Scan behavior
 
 Scans expose at least two output partitions, using the session target when larger.
-Work units follow natural Parquet row-group and Vortex layout boundaries, chosen
-with the projection and filter. Small files can leave output partitions empty.
+Parquet work units are physical row groups. Vortex uses its native split planner
+to combine small spans and subdivide large ones, with the projection and filter. Small files can leave output partitions empty.
 Limits and ordering stay above the scan in DataFusion to preserve parallel outputs.
 
 Readers share bounded opened-file metadata and payload caches across queries.
@@ -107,7 +107,10 @@ scan planning also needs to discover natural work units.
 `Cargo.toml` and `Cargo.lock` pin exact Git revisions for
 [spiraldb/iceberg-rust](https://github.com/spiraldb/iceberg-rust) and
 [vortex-parquet](https://github.com/spiraldb/vortex-parquet). No local Cargo patches
-are required. Reader and DataFusion integration changes stay in ColdFusion;
+are required. Dense identity projections use arrow-rs bulk decoding after the
+final row mask;
+computed projections and sparse or page-pruned requests keep native page execution.
+Reader and DataFusion integration changes stay in ColdFusion;
 Parquet layout improvements belong in vortex-parquet. That repository is currently
 Internal on GitHub, so building requires SpiralDB access and Git credentials.
 ColdFusion retains its existing Vortex Git pin for advisory expression conversion;
