@@ -1,14 +1,15 @@
 # Coldfusion
 
 Coldfusion is a read-only Iceberg table provider for DataFusion 55.2. It reads
-Parquet and Vortex through the native readers in `spiraldb/iceberg-rust` and
-exposes parallel scan streams. A table may contain either format or a mixture
+Parquet through [vortex-parquet](https://github.com/spiraldb/vortex-parquet) and
+Vortex through its native layouts, using one expression and scan pipeline. A table may contain either format or a mixture
 of both. DataFusion is unmodified.
 
 The dependency direction is `ColdFusion → Iceberg + DataFusion`. This repository
-owns the provider, partition planning, and DataFusion expression adaptation. The
-Iceberg reader exposes format-neutral scan tasks and native reader hooks; it
-has no DataFusion dependency.
+owns the readers, schema evolution, delete handling, partition planning, and
+DataFusion expression adaptation. Iceberg plans snapshot files and their applicable
+deletes; it has no DataFusion dependency. ColdFusion uses the unmodified main branch
+of `spiraldb/iceberg-rust`.
 
 ```toml
 [dependencies]
@@ -37,49 +38,33 @@ fn register(table: Table) -> Result<SessionContext> {
 
 ## Scan behavior
 
-Scans expose at least two output partitions, using the session target when
-larger. Each partition owns its reader stream and disjoint Parquet row groups
-or Vortex row ranges.
-Small files can leave partitions empty. Readers decode on DataFusion's query
-workers. Run queries on a Tokio runtime with I/O and timers enabled; foreground
-Parquet reads use the caller's runtime. Native Vortex scans reuse file handles
-opened on the table's configured I/O runtime. Keep that runtime alive and driven
-while queries use the cached files.
+Scans expose at least two output partitions, using the session target when larger.
+Work units follow natural Parquet row-group and Vortex layout boundaries, chosen
+with the projection and filter. Small files can leave output partitions empty.
+Limits and ordering stay above the scan in DataFusion to preserve parallel outputs.
 
-Native Vortex scans retain parallel outputs through optimizer rewrites. Limits
-and ordering stay above the scan in DataFusion rather than collapsing it to one
-output partition.
+Readers share bounded opened-file metadata and payload caches across queries.
+Expression caches belong to each planned scan; decoded delete keys are shared
+between its files. Create providers on a Tokio runtime with I/O and timers enabled,
+and keep that runtime alive while executing their scans.
 
 The provider retains the loaded schema and snapshot. Construct another provider
-to observe catalog changes. Reads use Iceberg's field-ID projection, schema
-evolution, defaults, and positional and equality delete handling. Output uses
-canonical Iceberg Arrow types, including `Utf8` and `LargeBinary`.
+to observe catalog changes. ColdFusion matches fields by Iceberg IDs, applies
+schema evolution, initial defaults and identity partition values, and resolves
+positional and equality deletes before producing output. Output uses canonical
+Iceberg Arrow types, including `Utf8` and `LargeBinary`. Hidden delete keys are
+retained internally even after a column is dropped. Encrypted files and delete
+formats other than Parquet or Vortex are rejected explicitly.
 
+Static primitive predicates prune Iceberg manifests. Both formats then evaluate
+Vortex expressions inside their layouts, including filter and projection pushdown.
+Parquet uses row-group and page statistics whenever available; files without page
+indexes still support row-group and row filtering. Page pruning is unconditional.
 Supported required-field predicates use exact pushdown by default, removing
-redundant DataFusion residuals. Supported Vortex scans use the native array source
-and reuse opened file metadata; other scans use the Arrow reader, with Vortex
-layout batches filtered before Arrow output is sliced. The
-`with_exact_filter_pushdown` and `with_native_vortex_scan` methods can disable
-those optimizations independently. Vortex layout batching is unconditional.
+redundant DataFusion residuals. `with_exact_filter_pushdown(false)` retains those
+residuals. Both formats always use the shared Vortex readers and expression converter.
 
-Static primitive predicates prune manifests, row groups, and Parquet pages.
-Page-statistics pruning follows DataFusion's
-`datafusion.execution.parquet.enable_page_index` setting (enabled by default).
-Files without indexes fall back to row-group and decoded-row filtering.
-DataFusion retains conditions outside the exact predicate subset. Parquet live
-dynamic filters use cheap
-bounds, null checks, and short literal lists. DataFusion can represent live join
-filters using `CASE` and hash lookups; evaluating these for every scanned row can
-cost more than it saves when little is pruned. The provider declines that optional
-reader pushdown and retains DataFusion's join and residual checks. This does not
-skip SQL `CASE` evaluation required by the query. Vortex uses the native static
-predicate path and DataFusion residuals; the Parquet-specific live row-filter
-hook does not run on Vortex files. The Arrow reader evaluates live filters on
-decoded Arrow batches; it does not currently turn arbitrary `CASE` expressions
-into metadata pruning. Native Vortex scans delegate supported live expressions to
-the official Vortex adapter, which evaluates them over Vortex arrays.
-
-The native Vortex source uses one converter for static filters and computed
+The shared source uses one converter for static filters and computed
 projections. It extracts compatible native subtrees and embeds remaining synchronous
 DataFusion expressions as a typed, process-local `DFScalarFn`. Volatile expressions
 stay in DataFusion. Conditional branches remain together unless extraction preserves
@@ -88,6 +73,7 @@ operations as safe for speculative evaluation; unknown operations are still acce
 inside the callback.
 
 Live join filters use generation-aware Vortex expressions and the same callback.
+Static filter and projection callbacks are supported for both formats.
 An evaluation error in an advisory hint retains rows; exact expressions preserve
 DataFusion errors. Exact projections containing live predicates stay in DataFusion,
 because later snapshots may introduce unsupported or volatile expressions. Other
@@ -97,30 +83,31 @@ produce coefficients outside the declared precision; decimal intermediates insid
 Boolean or other representable results are supported. Existing proven native decimal
 operations remain native. DataFusion itself is unchanged.
 
-The Arrow-reader scan exposes output rows, compute time, bytes read, and dynamic
-pruning through DataFusion metrics. Native Vortex scans expose the official
-Vortex execution metrics, but do not report per-query or per-partition
-`bytes_scanned`: file handles and their IO counters are shared across scans.
-Arrow-reader byte estimates describe projected Arrow output independently of
-file compression. Both Arrow-reader scans (Parquet and Vortex fallback) and
-native Vortex scans expose top-level Int/Long column bounds from Iceberg manifests as
-conservative scan statistics when every selected nonempty file supplies
-compatible bounds. Field IDs preserve these facts through renames and
-Int-to-Long promotion. Missing bounds remain unknown; distinct counts and null
-counts are not inferred. These bounds help DataFusion choose join order and
-build sides without additional payload or Parquet metadata reads.
+Scans expose the official Vortex execution metrics. I/O handles and payload
+caches are shared, so their byte counters are not reported as per-query
+`bytes_scanned`. Top-level Int/Long bounds come from file footers and remain
+conservative through renames and promotion. Missing bounds remain unknown;
+distinct counts and null counts are not inferred. These statistics help DataFusion
+choose join order and build sides. They require opening the selected files, which
+scan planning also needs to discover natural work units.
 
-## Iceberg dependency
+## Dependencies
 
-Native reader changes are maintained in
-[spiraldb/iceberg-rust](https://github.com/spiraldb/iceberg-rust).
-`Cargo.toml` and `Cargo.lock` pin the Git revision Cargo builds directly.
-DataFusion expression adaptation stays in this repository.
+`Cargo.toml` and `Cargo.lock` pin exact Git revisions for
+[spiraldb/iceberg-rust](https://github.com/spiraldb/iceberg-rust) and
+[vortex-parquet](https://github.com/spiraldb/vortex-parquet). No local Cargo patches
+are required. Reader and DataFusion integration changes stay in ColdFusion;
+Parquet layout improvements belong in vortex-parquet. That repository is currently
+Internal on GitHub, so building requires SpiralDB access and Git credentials.
+ColdFusion retains its existing Vortex Git pin for advisory expression conversion;
+Iceberg uses its own released Vortex internally. Vortex arrays do not cross that
+boundary.
 
 ## Validation
 
 ```sh
-cargo test --locked --all-targets
+cargo test --locked --test provider
+cargo test --locked --lib
 cargo clippy --locked --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```

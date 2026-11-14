@@ -38,16 +38,22 @@ include = [
 ]
 
 [dependencies]
+arrow-row = "59.3.2"
 async-trait = "0.1.89"
 datafusion = { version = "=55.2.0", default-features = false, features = ["parquet"] }
 futures = "0.3"
-iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "3f3b2237720b58721fd84a76058e0e47702bc834", default-features = false }
+iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "a24f97231aa263bcc8f62b3ee07b32a1055cbabb", default-features = false }
+moka = { version = "0.12", features = ["future"] }
 parquet = "=59.3.2"
+serde_json = "1"
 tokio = { version = "1.47", default-features = false, features = ["rt-multi-thread", "sync"] }
 vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", features = ["tokio"] }
 vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", default-features = false }
+vortex-parquet = { git = "https://github.com/spiraldb/vortex-parquet", rev = "eb0bd65802b4e401dfab0ae2f67e90d36df85e5c" }
 
 [dev-dependencies]
+# Only the Iceberg writer fixture uses Iceberg main's Vortex session type.
+iceberg-vortex = { package = "vortex", version = "=0.93.0", features = ["tokio"] }
 datafusion = { version = "=55.2.0", default-features = false, features = ["sql"] }
 tempfile = "3.18"
 tokio = { version = "1.47", default-features = false, features = ["macros"] }

@@ -16,3 +16,5 @@ target/
 
 # Dependency patch exports belong in their owning repository.
 /patches/
+
+/vortex-parquet/

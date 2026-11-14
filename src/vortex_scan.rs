@@ -23,72 +23,97 @@ mod generic_tests;
 mod parallel;
 mod properties;
 
-use std::num::NonZeroUsize;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::catalog::Session;
-use datafusion::common::{DataFusionError, Result};
+use datafusion::catalog::{Session, TableProvider};
+use datafusion::common::{DFSchema, DataFusionError, Result};
 use datafusion::datasource::source::{DataSource, DataSourceExec};
+use datafusion::logical_expr::{Expr, TableProviderFilterPushDown};
 use datafusion::physical_plan::ExecutionPlan;
-use iceberg::arrow::{VortexScanCache, VortexScanSource};
+use iceberg::Runtime;
 use iceberg::scan::FileScanTask;
 use iceberg::spec::DataFileFormat;
-use iceberg::table::Table;
-use vortex::VortexSessionDefault;
-use vortex::session::VortexSession;
+use vortex::expr::and_collect;
+use vortex_datafusion::convert::ExpressionConverter;
 use vortex_datafusion::v2::VortexDataSource;
 
 use self::convert::ScanExpressionConverter;
 use self::parallel::ParallelVortexSource;
-use crate::external;
+use crate::reader::{FileCache, IcebergSource};
+use crate::{IcebergTableProvider, external};
 
-pub(crate) async fn try_scan(
-    table: &Table,
-    schema: SchemaRef,
+pub(crate) async fn scan(
+    provider: &IcebergTableProvider,
     tasks: &[FileScanTask],
+    filters: &[Expr],
     projection: Option<&Vec<usize>>,
     state: &dyn Session,
-    cache: &OnceLock<VortexScanCache>,
-) -> Result<Option<Arc<dyn ExecutionPlan>>> {
-    if tasks.is_empty()
-        || tasks
-            .iter()
-            .any(|task| task.data_file_format() != DataFileFormat::Vortex)
-    {
-        return Ok(None);
+) -> Result<Arc<dyn ExecutionPlan>> {
+    let table = &provider.table;
+    let schema = provider.schema.clone();
+    let filter_support = provider.supports_filters_pushdown(&filters.iter().collect::<Vec<_>>())?;
+    if tasks.iter().any(|task| {
+        !matches!(
+            task.data_file_format(),
+            DataFileFormat::Parquet | DataFileFormat::Vortex
+        )
+    }) {
+        return Err(DataFusionError::NotImplemented(
+            "ColdFusion supports Parquet and Vortex data files".into(),
+        ));
     }
     let target = state.config().target_partitions().max(2);
-    let cache = cache.get_or_init(|| {
-        VortexScanCache::new(
-            table.file_io().clone(),
-            VortexSession::default(),
-            table.runtime().clone(),
-        )
-    });
+    let cache = provider
+        .file_cache
+        .get_or_try_init(|| async {
+            FileCache::new(
+                table.file_io().clone(),
+                provider
+                    .reader_runtime
+                    .clone()
+                    .unwrap_or_else(Runtime::current),
+            )
+            .await
+        })
+        .await
+        .map_err(external)?;
     let session = cache.session().clone();
-    let Some(source) = VortexScanSource::try_new_with_cache(
+    let converter: Arc<dyn ExpressionConverter> =
+        Arc::new(ScanExpressionConverter::new(session.clone()));
+    let df_schema = DFSchema::try_from(schema.as_ref().clone())?;
+    let mut converted = Vec::new();
+    for (filter, support) in filters.iter().zip(filter_support) {
+        let physical = state.create_physical_expr(filter.clone(), &df_schema)?;
+        let Some(expression) = converter.try_convert(&physical, &schema)? else {
+            if support == TableProviderFilterPushDown::Exact {
+                return Err(DataFusionError::Plan(format!(
+                    "Cannot execute exact scan filter {filter}"
+                )));
+            }
+            continue;
+        };
+        converted.push(expression);
+    }
+    let source = IcebergSource::prepare(
         cache,
         table.metadata().current_schema().clone(),
         tasks.to_vec(),
-        NonZeroUsize::new(target).expect("scan target has at least two partitions"),
+        and_collect(converted),
+        table.metadata().schemas_iter().cloned().collect(),
     )
     .await
-    .map_err(external)?
-    else {
-        return Ok(None);
-    };
+    .map_err(external)?;
     let source = VortexDataSource::builder(Arc::new(source), session.clone())
         .with_arrow_schema(schema)
         .with_some_projection(projection.cloned())
-        .with_expression_converter(Arc::new(ScanExpressionConverter::new(session)))
+        .with_expression_converter(converter)
         .build()
         .await
         .map_err(|error| DataFusionError::External(Box::new(error)))?;
     let source = source.repartitioned(target, 0, None)?.ok_or_else(|| {
         DataFusionError::Internal("Vortex source must expose parallel scan partitions".into())
     })?;
-    Ok(Some(Arc::new(DataSourceExec::new(
-        ParallelVortexSource::wrap(source)?,
-    ))))
+    Ok(Arc::new(DataSourceExec::new(ParallelVortexSource::wrap(
+        source,
+    )?)))
 }

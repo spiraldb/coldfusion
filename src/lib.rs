@@ -18,12 +18,12 @@
 //! Parallel Parquet and Vortex scans of Iceberg snapshots in DataFusion.
 
 mod predicate;
-mod scan;
-mod statistics;
+mod reader;
+
 mod vortex_scan;
 
 use std::collections::HashSet;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
@@ -34,8 +34,11 @@ use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
 use datafusion::physical_plan::ExecutionPlan;
 /// Iceberg APIs from the revision used by this provider.
 pub use iceberg;
-use iceberg::arrow::{VortexScanCache, schema_to_arrow_schema};
+use iceberg::Runtime;
+use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::table::Table;
+use reader::FileCache;
+use tokio::sync::OnceCell;
 
 /// Exposes an immutable Iceberg snapshot as parallel Parquet and Vortex scans.
 ///
@@ -44,8 +47,8 @@ use iceberg::table::Table;
 pub struct IcebergTableProvider {
     table: Table,
     schema: SchemaRef,
-    native_vortex_scan: bool,
-    native_vortex_cache: OnceLock<VortexScanCache>,
+    file_cache: OnceCell<FileCache>,
+    reader_runtime: Option<Runtime>,
     exact_filter_pushdown: bool,
     exact_filter_columns: HashSet<String>,
 }
@@ -86,30 +89,19 @@ impl IcebergTableProvider {
         Ok(Self {
             table,
             schema,
-            native_vortex_scan: true,
-            native_vortex_cache: OnceLock::new(),
+            file_cache: OnceCell::new(),
+            reader_runtime: Runtime::try_current().ok(),
             exact_filter_pushdown: true,
             exact_filter_columns,
         })
-    }
-
-    /// Uses Vortex's native expression scan interface for supported Iceberg tasks.
-    ///
-    /// Enabled by default.
-    /// Unsupported schemas, deletes and partition specifications use the Arrow reader.
-    /// Native scans expose Vortex execution metrics; the Arrow reader's per-partition
-    /// `bytes_scanned` metric is unavailable because cached IO is shared across scans.
-    pub fn with_native_vortex_scan(mut self, enabled: bool) -> Self {
-        self.native_vortex_scan = enabled;
-        self
     }
 
     /// Removes residuals for supported predicates on required fields without defaults.
     ///
     /// Enabled by default.
     /// Partitioned tables retain residuals because readers may synthesize partition
-    /// values after filtering. Optional fields also retain residuals: an older file
-    /// may omit them, and native readers can conservatively retain those rows.
+    /// values from partition metadata. Optional fields and fields with defaults
+    /// retain residuals under this conservative eligibility rule.
     /// This policy trusts valid Iceberg files and their field-ID or name mappings.
     pub fn with_exact_filter_pushdown(mut self, enabled: bool) -> Self {
         self.exact_filter_pushdown = enabled;
@@ -159,28 +151,7 @@ impl TableProvider for IcebergTableProvider {
         )
         .await
         .map_err(external)?;
-        if self.native_vortex_scan
-            && let Some(plan) = vortex_scan::try_scan(
-                &self.table,
-                self.schema.clone(),
-                &tasks,
-                projection,
-                state,
-                &self.native_vortex_cache,
-            )
-            .await?
-        {
-            return Ok(plan);
-        }
-        Ok(Arc::new(scan::IcebergScan::try_new(
-            self.table.clone(),
-            schema,
-            tasks,
-            state.config().target_partitions(),
-            state.config().batch_size(),
-            !filters.is_empty(),
-            state.config_options().execution.parquet.enable_page_index,
-        )?))
+        vortex_scan::scan(self, &tasks, filters, projection, state).await
     }
 
     fn supports_filters_pushdown(
@@ -218,7 +189,7 @@ impl TableProvider for IcebergTableProvider {
             .get("total-records")
             .and_then(|value| value.parse().ok())
             .map_or(Precision::Absent, Precision::Inexact);
-        statistics::output_bytes(&mut statistics, &self.schema);
+
         Some(statistics)
     }
 }
