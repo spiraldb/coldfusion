@@ -72,7 +72,9 @@ their evaluation domain. A small conservative tree walk marks only proven infall
 operations as safe for speculative evaluation; unknown operations are still accepted
 inside the callback.
 
-Live join filters use generation-aware Vortex expressions and the same callback.
+Vortex and mixed-format scans use generation-aware live join filters and the same
+callback. Parquet-only scans push native dynamic bounds; expensive optional
+CASE/hash callbacks remain in DataFusion, which enforces the complete filter.
 Static filter and projection callbacks are supported for both formats.
 An evaluation error in an advisory hint retains rows; exact expressions preserve
 DataFusion errors. Exact projections containing live predicates stay in DataFusion,

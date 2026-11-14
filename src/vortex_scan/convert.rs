@@ -28,17 +28,25 @@ use vortex::expr::Expression;
 use vortex::session::VortexSession;
 use vortex_datafusion::convert::{DefaultExpressionConverter, ExpressionConverter};
 
+use super::df_scalar::native_infallible;
+
 #[derive(Clone)]
 pub(super) struct ScanExpressionConverter {
     native: Arc<DefaultExpressionConverter>,
     pub(super) session: VortexSession,
+    native_dynamic_hints: bool,
 }
 impl ScanExpressionConverter {
     pub(super) fn new(session: VortexSession) -> Self {
         Self {
             native: Arc::new(DefaultExpressionConverter::new(session.clone())),
             session,
+            native_dynamic_hints: false,
         }
+    }
+    pub(super) fn with_native_dynamic_hints(mut self) -> Self {
+        self.native_dynamic_hints = true;
+        self
     }
     #[cfg(test)]
     pub(super) fn native(
@@ -95,8 +103,7 @@ impl ScanExpressionConverter {
         candidates: &mut NativeCandidates,
     ) -> Result<Option<Expression>> {
         if let Some(native) = self.native_with(expr, schema, candidates)?
-            && (mode == super::df_scalar::Mode::Exact
-                || super::df_scalar::native_infallible(&native))
+            && (mode == super::df_scalar::Mode::Exact || native_infallible(&native))
         {
             return Ok(Some(native));
         }
@@ -137,7 +144,13 @@ impl ExpressionConverter for ScanExpressionConverter {
         expr: &Arc<dyn PhysicalExpr>,
         schema: &Schema,
     ) -> Result<Option<Expression>> {
-        self.lower(expr, schema, super::df_scalar::Mode::Hint)
+        if self.native_dynamic_hints {
+            Ok(self
+                .native_with(expr, schema, &mut NativeCandidates::default())?
+                .filter(native_infallible))
+        } else {
+            self.lower(expr, schema, super::df_scalar::Mode::Hint)
+        }
     }
 }
 

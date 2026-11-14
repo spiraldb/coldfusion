@@ -78,8 +78,19 @@ pub(crate) async fn scan(
         .await
         .map_err(external)?;
     let session = cache.session().clone();
-    let converter: Arc<dyn ExpressionConverter> =
-        Arc::new(ScanExpressionConverter::new(session.clone()));
+    let converter = ScanExpressionConverter::new(session.clone());
+    // Keep optional row-wise CASE/hash work above Parquet scans; native bounds
+    // still enter the layouts. Static filters and projections use the full converter.
+    let converter: Arc<dyn ExpressionConverter> = Arc::new(
+        if tasks
+            .iter()
+            .all(|task| task.data_file_format() == DataFileFormat::Parquet)
+        {
+            converter.with_native_dynamic_hints()
+        } else {
+            converter
+        },
+    );
     let df_schema = DFSchema::try_from(schema.as_ref().clone())?;
     let mut converted = Vec::new();
     for (filter, support) in filters.iter().zip(filter_support) {
