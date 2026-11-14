@@ -98,22 +98,17 @@ pub(crate) async fn scan(
     let df_schema = DFSchema::try_from(schema.as_ref().clone())?;
     let mut converted = Vec::new();
     for (filter, support) in filters.iter().zip(filter_support) {
+        // Inexact filters retain a DF residual, which the physical optimizer can
+        // push into the scan once. Lowering them here would evaluate them twice.
+        if support != TableProviderFilterPushDown::Exact {
+            continue;
+        }
         let physical = state.create_physical_expr(filter.clone(), &df_schema)?;
         // The closed Exact language only compares columns and constants, so it
-        // cannot fail on deleted rows. Other filters require the physical proof.
-        let expression = if support == TableProviderFilterPushDown::Exact {
-            converter.try_convert(&physical, &schema)?
-        } else {
-            filter_converter.try_convert(&physical, &schema)?
-        };
-        let Some(expression) = expression else {
-            if support == TableProviderFilterPushDown::Exact {
-                return Err(DataFusionError::Plan(format!(
-                    "Cannot execute exact scan filter {filter}"
-                )));
-            }
-            continue;
-        };
+        // cannot fail on deleted rows.
+        let expression = converter.try_convert(&physical, &schema)?.ok_or_else(|| {
+            DataFusionError::Plan(format!("Cannot execute exact scan filter {filter}"))
+        })?;
         converted.push(expression);
     }
     let source = IcebergSource::prepare(

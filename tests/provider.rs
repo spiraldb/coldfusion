@@ -1227,11 +1227,17 @@ async fn promoted_integer_predicates_preserve_out_of_range_literals() {
         (col("id").lt(lit(2147483648_i64)), ROWS as usize - 20),
         (col("id").gt(lit(2147483648_i64)), 0),
     ] {
-        let direct = provider
-            .scan(&context.state(), Some(&vec![1]), &[filter], None)
+        let batches = context
+            .table("promoted")
+            .await
+            .unwrap()
+            .filter(filter)
+            .unwrap()
+            .select_columns(&["label"])
+            .unwrap()
+            .collect()
             .await
             .unwrap();
-        let batches = collect(direct, context.task_ctx()).await.unwrap();
         assert_eq!(
             batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
             expected_rows
