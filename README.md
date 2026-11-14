@@ -13,7 +13,7 @@ of `spiraldb/iceberg-rust`.
 
 ```toml
 [dependencies]
-coldfusion = { git = "https://github.com/spiraldb/coldfusion", rev = "98ec669d786f2fb0d72d8b95b94469b846f191e0" }
+coldfusion = { git = "https://github.com/spiraldb/coldfusion", rev = "e8effc17850f7249db256ccca2e72b8812520682" }
 datafusion = { version = "=55.2.0", default-features = false, features = ["sql"] }
 ```
 
