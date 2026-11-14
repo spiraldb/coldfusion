@@ -2854,3 +2854,44 @@ async fn parquet_initial_defaults_keep_decimal_and_uuid_values() {
         );
     }
 }
+
+#[tokio::test]
+async fn parquet_fallible_expressions_ignore_deleted_rows() {
+    assert_fallible_expressions_ignore_deleted_rows(DataFileFormat::Parquet).await;
+}
+
+#[tokio::test]
+async fn vortex_fallible_expressions_ignore_deleted_rows() {
+    assert_fallible_expressions_ignore_deleted_rows(DataFileFormat::Vortex).await;
+}
+
+async fn assert_fallible_expressions_ignore_deleted_rows(format: DataFileFormat) {
+    let mut fixture = Fixture::new_with_format(true, format).await;
+    fixture.add_deletes().await;
+    let context = fixture.context();
+    context
+        .register_table(
+            "ice",
+            Arc::new(IcebergTableProvider::try_new(fixture.table).unwrap()),
+        )
+        .unwrap();
+    let batches = context
+        .sql("SELECT id FROM ice WHERE 1 / (id - 31) > 0")
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    assert_eq!(batches.iter().map(RecordBatch::num_rows).sum::<usize>(), 0);
+    let batches = context
+        .sql("SELECT 1 / (id - 31) AS ratio FROM ice")
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    assert_eq!(
+        batches.iter().map(RecordBatch::num_rows).sum::<usize>(),
+        ROWS as usize - 7
+    );
+}

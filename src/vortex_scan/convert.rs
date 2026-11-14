@@ -23,10 +23,13 @@ use datafusion::common::Result;
 use datafusion::functions::core::getfield::GetFieldFunc;
 use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::expressions::{BinaryExpr, CastExpr, InListExpr, NegativeExpr};
+use datafusion::physical_expr::projection::ProjectionExprs;
 use datafusion::physical_expr::{PhysicalExpr, ScalarFunctionExpr};
 use vortex::expr::Expression;
 use vortex::session::VortexSession;
-use vortex_datafusion::convert::{DefaultExpressionConverter, ExpressionConverter};
+use vortex_datafusion::convert::{
+    DefaultExpressionConverter, ExpressionConverter, ProcessedProjection,
+};
 
 use super::df_scalar::native_infallible;
 
@@ -151,6 +154,38 @@ impl ExpressionConverter for ScanExpressionConverter {
         } else {
             self.lower(expr, schema, super::df_scalar::Mode::Hint)
         }
+    }
+}
+
+/// Deleted rows must not encounter errors in filters evaluated before row selection.
+pub(super) struct DeleteSafeConverter(pub(super) ScanExpressionConverter);
+
+impl ExpressionConverter for DeleteSafeConverter {
+    fn try_convert(
+        &self,
+        expr: &Arc<dyn PhysicalExpr>,
+        schema: &Schema,
+    ) -> Result<Option<Expression>> {
+        Ok(self.0.try_convert(expr, schema)?.filter(native_infallible))
+    }
+
+    fn try_convert_dynamic(
+        &self,
+        expr: &Arc<dyn PhysicalExpr>,
+        schema: &Schema,
+    ) -> Result<Option<Expression>> {
+        self.0.try_convert_dynamic(expr, schema)
+    }
+
+    fn split_projection(
+        &self,
+        projection: ProjectionExprs,
+        input_schema: &Schema,
+        output_schema: &Schema,
+    ) -> Result<ProcessedProjection> {
+        // Projection evaluation already applies the final selection first.
+        self.0
+            .split_projection(projection, input_schema, output_schema)
     }
 }
 

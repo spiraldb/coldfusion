@@ -77,6 +77,8 @@ struct PreparedTask {
     selection: Selection,
 }
 impl IcebergSource {
+    /// Static filters must be safe on rows later removed by deletes; the scan
+    /// converter establishes this before passing predicates to the layouts.
     pub(crate) async fn prepare(
         cache: &FileCache,
         schema: SchemaRef,

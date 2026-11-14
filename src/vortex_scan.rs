@@ -37,7 +37,7 @@ use vortex::expr::and_collect;
 use vortex_datafusion::convert::ExpressionConverter;
 use vortex_datafusion::v2::VortexDataSource;
 
-use self::convert::ScanExpressionConverter;
+use self::convert::{DeleteSafeConverter, ScanExpressionConverter};
 use self::parallel::ParallelVortexSource;
 use crate::reader::{FileCache, IcebergSource};
 use crate::{IcebergTableProvider, external};
@@ -81,21 +81,32 @@ pub(crate) async fn scan(
     let converter = ScanExpressionConverter::new(session.clone());
     // Keep optional row-wise CASE/hash work above Parquet scans; native bounds
     // still enter the layouts. Static filters and projections use the full converter.
-    let converter: Arc<dyn ExpressionConverter> = Arc::new(
-        if tasks
-            .iter()
-            .all(|task| task.data_file_format() == DataFileFormat::Parquet)
-        {
-            converter.with_native_dynamic_hints()
+    let converter = if tasks
+        .iter()
+        .all(|task| task.data_file_format() == DataFileFormat::Parquet)
+    {
+        converter.with_native_dynamic_hints()
+    } else {
+        converter
+    };
+    let filter_converter: Arc<dyn ExpressionConverter> =
+        if tasks.iter().any(|task| !task.deletes().is_empty()) {
+            Arc::new(DeleteSafeConverter(converter.clone()))
         } else {
-            converter
-        },
-    );
+            Arc::new(converter.clone())
+        };
     let df_schema = DFSchema::try_from(schema.as_ref().clone())?;
     let mut converted = Vec::new();
     for (filter, support) in filters.iter().zip(filter_support) {
         let physical = state.create_physical_expr(filter.clone(), &df_schema)?;
-        let Some(expression) = converter.try_convert(&physical, &schema)? else {
+        // The closed Exact language only compares columns and constants, so it
+        // cannot fail on deleted rows. Other filters require the physical proof.
+        let expression = if support == TableProviderFilterPushDown::Exact {
+            converter.try_convert(&physical, &schema)?
+        } else {
+            filter_converter.try_convert(&physical, &schema)?
+        };
+        let Some(expression) = expression else {
             if support == TableProviderFilterPushDown::Exact {
                 return Err(DataFusionError::Plan(format!(
                     "Cannot execute exact scan filter {filter}"
@@ -117,7 +128,7 @@ pub(crate) async fn scan(
     let source = VortexDataSource::builder(Arc::new(source), session.clone())
         .with_arrow_schema(schema)
         .with_some_projection(projection.cloned())
-        .with_expression_converter(converter)
+        .with_expression_converter(filter_converter)
         .build()
         .await
         .map_err(|error| DataFusionError::External(Box::new(error)))?;

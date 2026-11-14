@@ -75,7 +75,10 @@ inside the callback.
 Vortex and mixed-format scans use generation-aware live join filters and the same
 callback. Parquet-only scans push native dynamic bounds; expensive optional
 CASE/hash callbacks remain in DataFusion, which enforces the complete filter.
-Static filter and projection callbacks are supported for both formats.
+Static filter and projection callbacks are supported for both formats. When files
+have row deletes, unproven fallible filters stay in DataFusion above the resolved
+scan: layout filters may evaluate rows before applying a selection. Projections
+remain inside Vortex because their inputs have already been selected.
 An evaluation error in an advisory hint retains rows; exact expressions preserve
 DataFusion errors. Exact projections containing live predicates stay in DataFusion,
 because later snapshots may introduce unsupported or volatile expressions. Other
