@@ -39,6 +39,7 @@ use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::table::Table;
 use reader::FileCache;
 use tokio::sync::OnceCell;
+use vortex_parquet::view_typed_schema;
 
 /// Exposes an immutable Iceberg snapshot as parallel Parquet and Vortex scans.
 ///
@@ -85,7 +86,7 @@ impl IcebergTableProvider {
             HashSet::new()
         };
         let schema = schema_to_arrow_schema(table.metadata().current_schema()).map_err(external)?;
-        let schema = Arc::new(schema);
+        let schema = Arc::new(view_typed_schema(&schema));
         Ok(Self {
             table,
             schema,

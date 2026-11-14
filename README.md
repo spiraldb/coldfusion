@@ -51,8 +51,9 @@ and keep that runtime alive while executing their scans.
 The provider retains the loaded schema and snapshot. Construct another provider
 to observe catalog changes. ColdFusion matches fields by Iceberg IDs, applies
 schema evolution, initial defaults and identity partition values, and resolves
-positional and equality deletes before producing output. Output uses canonical
-Iceberg Arrow types, including `Utf8` and `LargeBinary`. Hidden delete keys are
+positional and equality deletes before producing output. Output uses Arrow
+view types for string and binary columns, also inside structs and variable-length
+lists, so DataFusion can consume their buffers without rebuilding offset arrays. Hidden delete keys are
 retained internally even after a column is dropped. Encrypted files and delete
 formats other than Parquet or Vortex are rejected explicitly.
 

@@ -20,8 +20,8 @@ use std::sync::Arc;
 
 use coldfusion::{IcebergTableProvider, iceberg};
 use datafusion::arrow::array::{
-    ArrayRef, BooleanArray, Float64Array, Int32Array, Int64Array, LargeBinaryArray, StringArray,
-    StructArray,
+    ArrayRef, BinaryViewArray, BooleanArray, Float64Array, Int32Array, Int64Array,
+    LargeBinaryArray, StringArray, StringViewArray, StructArray,
 };
 use datafusion::arrow::buffer::NullBuffer;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
@@ -484,15 +484,15 @@ fn parallel_single_file_scans_preserve_projection_and_row_counts() {
             IcebergTableProvider::try_new(fixture.table.clone().with_runtime(runtime)).unwrap();
         let context = fixture.context();
         let state = context.state();
-        assert_eq!(provider.schema().field(1).data_type(), &DataType::Utf8);
+        assert_eq!(provider.schema().field(1).data_type(), &DataType::Utf8View);
         assert_eq!(
             provider.schema().field(5).data_type(),
-            &DataType::LargeBinary
+            &DataType::BinaryView
         );
         let DataType::Struct(payload) = provider.schema().field(3).data_type().clone() else {
             unreachable!()
         };
-        assert_eq!(payload[1].data_type(), &DataType::Utf8);
+        assert_eq!(payload[1].data_type(), &DataType::Utf8View);
         let projection = vec![3, 1, 0, 5];
         let plan = provider
             .scan(&state, Some(&projection), &[], None)
@@ -508,11 +508,13 @@ fn parallel_single_file_scans_preserve_projection_and_row_counts() {
                 > 1
         );
         let mut ids = Vec::new();
+        let expected_schema = Arc::new(provider.schema().project(&projection).unwrap());
         for batch in partitions.into_iter().flatten() {
+            assert_eq!(batch.schema(), expected_schema);
             assert_eq!(batch.schema().field(0).name(), "payload");
             assert_eq!(batch.schema().field(1).name(), "label");
-            assert_eq!(batch.column(1).data_type(), &DataType::Utf8);
-            assert_eq!(batch.column(3).data_type(), &DataType::LargeBinary);
+            assert_eq!(batch.column(1).data_type(), &DataType::Utf8View);
+            assert_eq!(batch.column(3).data_type(), &DataType::BinaryView);
             let column = batch
                 .column(2)
                 .as_any()
@@ -521,7 +523,7 @@ fn parallel_single_file_scans_preserve_projection_and_row_counts() {
             let blobs = batch
                 .column(3)
                 .as_any()
-                .downcast_ref::<LargeBinaryArray>()
+                .downcast_ref::<BinaryViewArray>()
                 .unwrap();
             assert_eq!(
                 blobs
@@ -682,7 +684,7 @@ async fn parquet_page_indexes_preserve_unprojected_filters_and_deletes() {
                 batch
                     .column(0)
                     .as_any()
-                    .downcast_ref::<StringArray>()
+                    .downcast_ref::<StringViewArray>()
                     .unwrap()
                     .iter()
                     .map(|value| value.unwrap().to_owned())
@@ -942,7 +944,7 @@ async fn assert_deletes_apply_across_split_ranges_and_unprojected_keys(format: D
             batch
                 .column(0)
                 .as_any()
-                .downcast_ref::<StringArray>()
+                .downcast_ref::<StringViewArray>()
                 .unwrap()
                 .iter()
                 .map(|value| value.map(str::to_owned))
@@ -1086,7 +1088,7 @@ async fn assert_added_columns_and_empty_snapshots_keep_their_schema(format: Data
             batch
                 .column(0)
                 .as_any()
-                .downcast_ref::<StringArray>()
+                .downcast_ref::<StringViewArray>()
                 .unwrap()
                 .iter()
                 .map(|value| value.map(str::to_owned))
@@ -1108,7 +1110,7 @@ async fn assert_added_columns_and_empty_snapshots_keep_their_schema(format: Data
             batch
                 .column(1)
                 .as_any()
-                .downcast_ref::<StringArray>()
+                .downcast_ref::<StringViewArray>()
                 .unwrap()
                 .iter()
                 .all(|value| value == Some("fallback"))
@@ -1146,7 +1148,7 @@ async fn assert_added_columns_and_empty_snapshots_keep_their_schema(format: Data
         .scan(&context.state(), None, &[], None)
         .await
         .unwrap();
-    assert_eq!(plan.schema().as_ref(), empty.batch.schema().as_ref());
+    assert_eq!(plan.schema(), provider.schema());
     assert_eq!(plan.output_partitioning().partition_count(), 4);
     assert!(collect(plan, context.task_ctx()).await.unwrap().is_empty());
 }
@@ -1392,12 +1394,12 @@ async fn vortex_single_file_scans_preserve_parallel_rows_and_projections() {
         let labels = batch
             .column(2)
             .as_any()
-            .downcast_ref::<StringArray>()
+            .downcast_ref::<StringViewArray>()
             .unwrap();
         let blobs = batch
             .column(3)
             .as_any()
-            .downcast_ref::<LargeBinaryArray>()
+            .downcast_ref::<BinaryViewArray>()
             .unwrap();
         assert_eq!(
             labels
