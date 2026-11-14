@@ -49,7 +49,7 @@ serde_json = "1"
 tokio = { version = "1.47", default-features = false, features = ["rt-multi-thread", "sync"] }
 vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", features = ["tokio"] }
 vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", default-features = false }
-vortex-parquet = { git = "https://github.com/spiraldb/vortex-parquet", rev = "4f471aa8e9c94abdb539afd1e53451d851164bd9" }
+vortex-parquet = { git = "https://github.com/spiraldb/vortex-parquet", rev = "e2ace00f6a3ca5b1911a13edd4e455dfa3366597" }
 
 [dev-dependencies]
 # Only the Iceberg writer fixture uses Iceberg main's Vortex session type.

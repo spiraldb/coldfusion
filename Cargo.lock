@@ -5840,7 +5840,7 @@ dependencies = [
 [[package]]
 name = "vortex-parquet"
 version = "0.1.0"
-source = "git+https://github.com/spiraldb/vortex-parquet?rev=4f471aa8e9c94abdb539afd1e53451d851164bd9#4f471aa8e9c94abdb539afd1e53451d851164bd9"
+source = "git+https://github.com/spiraldb/vortex-parquet?rev=e2ace00f6a3ca5b1911a13edd4e455dfa3366597#e2ace00f6a3ca5b1911a13edd4e455dfa3366597"
 dependencies = [
  "arrow-schema",
  "async-trait",
