@@ -571,6 +571,77 @@ mod tests {
         }
     }
     #[test]
+    fn restricted_dynamic_hints_keep_membership_across_updates() {
+        let batch = input();
+        let dynamic = Arc::new(DynamicFilterPhysicalExpr::new(
+            vec![Arc::new(Column::new("id", 1))],
+            lookup(vec![Some(2)], 1, 17),
+        ));
+        let expr: Arc<dyn PhysicalExpr> = dynamic.clone();
+        let converted = ScanExpressionConverter::new(VortexSession::default())
+            .with_native_or_membership_dynamic_hints()
+            .try_convert_dynamic(&expr, &batch.schema())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            &evaluate(&converted, &batch),
+            &(Arc::new(BooleanArray::from(vec![
+                false, true, false, false, false, false
+            ])) as ArrowArrayRef)
+        );
+        dynamic.update(lookup(vec![Some(5)], 1, 17)).unwrap();
+        assert_eq!(
+            &evaluate(&converted, &batch),
+            &(Arc::new(BooleanArray::from(vec![
+                false, false, false, false, false, true
+            ])) as ArrowArrayRef)
+        );
+    }
+
+    #[test]
+    fn restricted_dynamic_hints_keep_bounds_beside_opaque_case() {
+        let batch = input();
+        let bounds = binary(
+            binary(Arc::new(Column::new("id", 1)), Operator::GtEq, integer(3)),
+            Operator::And,
+            binary(Arc::new(Column::new("id", 1)), Operator::LtEq, integer(4)),
+        );
+        let case: Arc<dyn PhysicalExpr> = Arc::new(
+            CaseExpr::try_new(
+                Some(Arc::new(Column::new("id", 1))),
+                vec![(integer(3), lookup(vec![Some(3)], 1, 17))],
+                Some(Arc::new(Literal::new(ScalarValue::Boolean(Some(false))))),
+            )
+            .unwrap(),
+        );
+        let dynamic: Arc<dyn PhysicalExpr> = Arc::new(DynamicFilterPhysicalExpr::new(
+            vec![Arc::new(Column::new("id", 1))],
+            binary(bounds.clone(), Operator::And, case.clone()),
+        ));
+        let converter = ScanExpressionConverter::new(VortexSession::default())
+            .with_native_or_membership_dynamic_hints();
+        let converted = converter
+            .try_convert_dynamic(&dynamic, &batch.schema())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            &evaluate(&converted, &batch),
+            &bounds
+                .evaluate(&batch)
+                .unwrap()
+                .into_array_of_size(batch.num_rows())
+                .unwrap()
+        );
+        // The same CASE remains available for exact filters and projections.
+        assert!(
+            converter
+                .try_convert(&case, &batch.schema())
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
     fn unselective_advisory_membership_resumes_after_a_dynamic_update() {
         let batch = input();
         let all = lookup(

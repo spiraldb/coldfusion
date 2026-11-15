@@ -79,13 +79,13 @@ pub(crate) async fn scan(
         .map_err(external)?;
     let session = cache.session().clone();
     let converter = ScanExpressionConverter::new(session.clone());
-    // Keep optional row-wise CASE/hash work above Parquet scans; native bounds
-    // still enter the layouts. Static filters and projections use the full converter.
+    // Parquet accepts native bounds and direct membership hints without routing
+    // opaque CASE expressions through Arrow. Static filters and projections use the full converter.
     let converter = if tasks
         .iter()
         .all(|task| task.data_file_format() == DataFileFormat::Parquet)
     {
-        converter.with_native_dynamic_hints()
+        converter.with_native_or_membership_dynamic_hints()
     } else {
         converter
     };

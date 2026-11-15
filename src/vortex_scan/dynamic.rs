@@ -28,7 +28,7 @@ use datafusion::physical_expr_common::physical_expr::{
 };
 use vortex::dtype::{DType, Nullability};
 use vortex::error::VortexResult;
-use vortex::expr::transform::replace;
+use vortex::expr::transform::{find_between, replace};
 use vortex::expr::{BoundExpression, Expression, dynamic_expression, get_item, lit, pack, root};
 use vortex::scalar_fn::fns::dynamic_expression::{DynamicExpressionSource, input_field_name};
 
@@ -108,6 +108,11 @@ impl DynamicExpressionSource for Source {
             .ok_or_else(|| {
                 vortex::error::vortex_err!("Exact dynamic expression became unsupported")
             })?;
-        replace(expression, &root(), self.scope_projection.clone()).bind(scope)
+        let expression = replace(expression, &root(), self.scope_projection.clone()).bind(scope)?;
+        if self.converter.restricts_dynamic_hints() {
+            find_between(expression)
+        } else {
+            Ok(expression)
+        }
     }
 }

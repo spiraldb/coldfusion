@@ -25,31 +25,35 @@ use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::expressions::{BinaryExpr, CastExpr, InListExpr, NegativeExpr};
 use datafusion::physical_expr::projection::ProjectionExprs;
 use datafusion::physical_expr::{PhysicalExpr, ScalarFunctionExpr};
+use datafusion::physical_plan::joins::HashTableLookupExpr;
 use vortex::expr::Expression;
 use vortex::session::VortexSession;
 use vortex_datafusion::convert::{
     DefaultExpressionConverter, ExpressionConverter, ProcessedProjection,
 };
 
-use super::df_scalar::native_infallible;
+use super::df_scalar::{Mode, native_infallible};
 
 #[derive(Clone)]
 pub(super) struct ScanExpressionConverter {
     native: Arc<DefaultExpressionConverter>,
     pub(super) session: VortexSession,
-    native_dynamic_hints: bool,
+    native_or_membership_dynamic_hints: bool,
 }
 impl ScanExpressionConverter {
     pub(super) fn new(session: VortexSession) -> Self {
         Self {
             native: Arc::new(DefaultExpressionConverter::new(session.clone())),
             session,
-            native_dynamic_hints: false,
+            native_or_membership_dynamic_hints: false,
         }
     }
-    pub(super) fn with_native_dynamic_hints(mut self) -> Self {
-        self.native_dynamic_hints = true;
+    pub(super) fn with_native_or_membership_dynamic_hints(mut self) -> Self {
+        self.native_or_membership_dynamic_hints = true;
         self
+    }
+    pub(super) fn restricts_dynamic_hints(&self) -> bool {
+        self.native_or_membership_dynamic_hints
     }
     #[cfg(test)]
     pub(super) fn native(
@@ -75,7 +79,7 @@ impl ScanExpressionConverter {
         &self,
         expr: &Arc<dyn PhysicalExpr>,
         schema: &Schema,
-        mode: super::df_scalar::Mode,
+        mode: Mode,
     ) -> Result<Option<Expression>> {
         use datafusion::physical_expr::DynamicFilterTracking;
         use datafusion::physical_expr_common::physical_expr::is_volatile;
@@ -85,13 +89,12 @@ impl ScanExpressionConverter {
         if DynamicFilterTracking::classify(expr).contains_dynamic_filter() {
             // A join's live predicate is an advisory hint. An exact projection must
             // stay in DF: its future snapshots may be volatile or unrepresentable.
-            if mode == super::df_scalar::Mode::Exact || expr.data_type(schema)? != DataType::Boolean
-            {
+            if mode == Mode::Exact || expr.data_type(schema)? != DataType::Boolean {
                 return Ok(None);
             }
             return super::dynamic::lower(self, expr.clone(), schema, mode).map(Some);
         }
-        if mode == super::df_scalar::Mode::Hint && expr.data_type(schema)? != DataType::Boolean {
+        if mode == Mode::Hint && expr.data_type(schema)? != DataType::Boolean {
             return Ok(None);
         }
         self.lower_static(expr, schema, mode, &mut NativeCandidates::default())
@@ -102,11 +105,11 @@ impl ScanExpressionConverter {
         &self,
         expr: &Arc<dyn PhysicalExpr>,
         schema: &Schema,
-        mode: super::df_scalar::Mode,
+        mode: Mode,
         candidates: &mut NativeCandidates,
     ) -> Result<Option<Expression>> {
         if let Some(native) = self.native_with(expr, schema, candidates)?
-            && (mode == super::df_scalar::Mode::Exact || native_infallible(&native))
+            && (mode == Mode::Exact || native_infallible(&native))
         {
             return Ok(Some(native));
         }
@@ -114,7 +117,7 @@ impl ScanExpressionConverter {
         // so conservative children remain conservative together. Exposing native
         // bounds here lets Vortex prune before evaluating opaque membership.
         // NOT and conditional branches must remain inside one DF callback.
-        if mode == super::df_scalar::Mode::Hint
+        if mode == Mode::Hint
             && let Some(binary) = expr.downcast_ref::<BinaryExpr>()
             && matches!(binary.op(), Operator::And | Operator::Or)
         {
@@ -131,6 +134,13 @@ impl ScanExpressionConverter {
             };
             return Ok(Some(vortex::expr::binary(operator, left, right)));
         }
+        // Keep direct membership in DF's evaluator; other opaque hints may retain extra rows.
+        if mode == Mode::Hint
+            && self.native_or_membership_dynamic_hints
+            && !expr.is::<HashTableLookupExpr>()
+        {
+            return Ok(None);
+        }
         super::df_scalar::lower(self, expr, schema, mode, candidates)
     }
 }
@@ -140,20 +150,14 @@ impl ExpressionConverter for ScanExpressionConverter {
         expr: &Arc<dyn PhysicalExpr>,
         schema: &Schema,
     ) -> Result<Option<Expression>> {
-        self.lower(expr, schema, super::df_scalar::Mode::Exact)
+        self.lower(expr, schema, Mode::Exact)
     }
     fn try_convert_dynamic(
         &self,
         expr: &Arc<dyn PhysicalExpr>,
         schema: &Schema,
     ) -> Result<Option<Expression>> {
-        if self.native_dynamic_hints {
-            Ok(self
-                .native_with(expr, schema, &mut NativeCandidates::default())?
-                .filter(native_infallible))
-        } else {
-            self.lower(expr, schema, super::df_scalar::Mode::Hint)
-        }
+        self.lower(expr, schema, Mode::Hint)
     }
 }
 
