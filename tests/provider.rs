@@ -466,6 +466,93 @@ impl Fixture {
     }
 }
 
+#[tokio::test]
+async fn parquet_task_count_allows_parallel_partial_aggregation() {
+    use datafusion::datasource::source::DataSourceExec;
+    use datafusion::physical_plan::ExecutionPlan;
+    use datafusion::physical_plan::execution_plan::reset_plan_states;
+
+    fn source(plan: &dyn ExecutionPlan) -> Option<&DataSourceExec> {
+        plan.downcast_ref::<DataSourceExec>().or_else(|| {
+            plan.children()
+                .into_iter()
+                .find_map(|child| source(child.as_ref()))
+        })
+    }
+
+    let fixture = Fixture::new(true).await;
+    let context = SessionContext::new_with_config(
+        SessionConfig::new()
+            .with_target_partitions(14)
+            .with_batch_size(8),
+    );
+    context
+        .register_table(
+            "ice",
+            Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap()),
+        )
+        .unwrap();
+    context
+        .register_table(
+            "reference",
+            Arc::new(
+                MemTable::try_new(fixture.batch.schema(), vec![vec![fixture.batch.clone()]])
+                    .unwrap(),
+            ),
+        )
+        .unwrap();
+    let plan = context
+        .sql(
+            "SELECT flag, SUM(id + 1) AS total FROM ice WHERE id >= 11 GROUP BY flag ORDER BY flag",
+        )
+        .await
+        .unwrap()
+        .create_physical_plan()
+        .await
+        .unwrap();
+    let display = displayable(plan.as_ref()).indent(true).to_string();
+    let partial = display.find("AggregateExec: mode=Partial").unwrap();
+    let repartition = display.find("RoundRobinBatch(14)").unwrap();
+    assert!(partial < repartition, "{display}");
+    let scan = source(plan.as_ref()).unwrap();
+    // The fixture writes 257 rows in row groups of 32 rows.
+    assert_eq!(scan.properties().output_partitioning().partition_count(), 9);
+    assert!(
+        scan.data_source()
+            .repartitioned(14, 0, None)
+            .unwrap()
+            .is_none()
+    );
+
+    let expected = context
+        .sql("SELECT flag, SUM(id + 1) AS total FROM reference WHERE id >= 11 GROUP BY flag ORDER BY flag")
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    let expected = pretty_format_batches(&expected).unwrap().to_string();
+    let actual = collect(plan.clone(), context.task_ctx()).await.unwrap();
+    assert_eq!(
+        pretty_format_batches(&actual).unwrap().to_string(),
+        expected
+    );
+    let plan = reset_plan_states(plan).unwrap();
+    assert_eq!(
+        source(plan.as_ref())
+            .unwrap()
+            .properties()
+            .output_partitioning()
+            .partition_count(),
+        9
+    );
+    let replayed = collect(plan, context.task_ctx()).await.unwrap();
+    assert_eq!(
+        pretty_format_batches(&replayed).unwrap().to_string(),
+        expected
+    );
+}
+
 #[test]
 fn parallel_single_file_scans_preserve_projection_and_row_counts() {
     let query_runtime = tokio::runtime::Builder::new_multi_thread()

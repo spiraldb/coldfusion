@@ -42,17 +42,33 @@ use datafusion::physical_plan::{
 #[derive(Debug)]
 pub(super) struct ParallelVortexSource {
     inner: Arc<dyn DataSource>,
+    max_partitions: Option<usize>,
 }
 
 impl ParallelVortexSource {
-    pub(super) fn wrap(inner: Arc<dyn DataSource>) -> Result<Arc<dyn DataSource>> {
+    pub(super) fn wrap(
+        inner: Arc<dyn DataSource>,
+        max_partitions: Option<usize>,
+    ) -> Result<Arc<dyn DataSource>> {
         if inner.output_partitioning().partition_count() < 2 || inner.fetch().is_some() {
             return Err(DataFusionError::Internal(
                 "ColdFusion Vortex scans require at least two output partitions and no source fetch"
                     .into(),
             ));
         }
-        Ok(Arc::new(Self { inner }))
+        if max_partitions.is_some_and(|max| inner.output_partitioning().partition_count() > max) {
+            return Err(DataFusionError::Internal(
+                "ColdFusion scan output partitions exceed the planned maximum".into(),
+            ));
+        }
+        Ok(Arc::new(Self {
+            inner,
+            max_partitions,
+        }))
+    }
+
+    fn with_inner(&self, inner: Arc<dyn DataSource>) -> Result<Arc<dyn DataSource>> {
+        Self::wrap(inner, self.max_partitions)
     }
 }
 
@@ -83,12 +99,17 @@ impl DataSource for ParallelVortexSource {
         repartition_file_min_size: usize,
         output_ordering: Option<LexOrdering>,
     ) -> Result<Option<Arc<dyn DataSource>>> {
-        if target_partitions < 2 || output_ordering.is_some() {
+        if target_partitions < 2
+            || output_ordering.is_some()
+            || self
+                .max_partitions
+                .is_some_and(|max| target_partitions > max)
+        {
             return Ok(None);
         }
         self.inner
             .repartitioned(target_partitions, repartition_file_min_size, None)?
-            .map(Self::wrap)
+            .map(|inner| self.with_inner(inner))
             .transpose()
     }
 
@@ -126,7 +147,7 @@ impl DataSource for ParallelVortexSource {
     ) -> Result<Option<Arc<dyn DataSource>>> {
         self.inner
             .try_swapping_with_projection(projection)?
-            .map(Self::wrap)
+            .map(|inner| self.with_inner(inner))
             .transpose()
     }
 
@@ -138,7 +159,10 @@ impl DataSource for ParallelVortexSource {
         let result = self.inner.try_pushdown_filters(filters, config)?;
         Ok(FilterPushdownPropagation {
             filters: result.filters,
-            updated_node: result.updated_node.map(Self::wrap).transpose()?,
+            updated_node: result
+                .updated_node
+                .map(|inner| self.with_inner(inner))
+                .transpose()?,
         })
     }
 
@@ -161,6 +185,6 @@ impl DataSource for ParallelVortexSource {
     }
 
     fn with_new_state(&self, state: Arc<dyn Any + Send + Sync>) -> Option<Arc<dyn DataSource>> {
-        Self::wrap(self.inner.with_new_state(state)?).ok()
+        self.with_inner(self.inner.with_new_state(state)?).ok()
     }
 }

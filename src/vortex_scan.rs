@@ -81,10 +81,10 @@ pub(crate) async fn scan(
     let converter = ScanExpressionConverter::new(session.clone());
     // Parquet accepts native bounds and direct membership hints without routing
     // opaque CASE expressions through Arrow. Static filters and projections use the full converter.
-    let converter = if tasks
+    let parquet_only = tasks
         .iter()
-        .all(|task| task.data_file_format() == DataFileFormat::Parquet)
-    {
+        .all(|task| task.data_file_format() == DataFileFormat::Parquet);
+    let converter = if parquet_only {
         converter.with_native_or_membership_dynamic_hints()
     } else {
         converter
@@ -120,6 +120,13 @@ pub(crate) async fn scan(
     )
     .await
     .map_err(external)?;
+    // Let DataFusion repartition batches for CPU work when the scan has fewer
+    // physical Parquet tasks than its target partition count.
+    let max_partitions = parquet_only
+        .then(|| source.scan_partition_count())
+        .transpose()
+        .map_err(external)?
+        .map(|count| count.max(2));
     let source = VortexDataSource::builder(Arc::new(source), session.clone())
         .with_arrow_schema(schema)
         .with_some_projection(projection.cloned())
@@ -127,10 +134,17 @@ pub(crate) async fn scan(
         .build()
         .await
         .map_err(|error| DataFusionError::External(Box::new(error)))?;
-    let source = source.repartitioned(target, 0, None)?.ok_or_else(|| {
-        DataFusionError::Internal("Vortex source must expose parallel scan partitions".into())
-    })?;
+    let source = source
+        .repartitioned(
+            max_partitions.map_or(target, |max| target.min(max)),
+            0,
+            None,
+        )?
+        .ok_or_else(|| {
+            DataFusionError::Internal("Vortex source must expose parallel scan partitions".into())
+        })?;
     Ok(Arc::new(DataSourceExec::new(ParallelVortexSource::wrap(
         source,
+        max_partitions,
     )?)))
 }

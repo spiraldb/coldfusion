@@ -76,6 +76,17 @@ struct PreparedTask {
     selection: Selection,
 }
 impl IcebergSource {
+    /// Counts planned layout tasks without reading data pages.
+    pub(crate) fn scan_partition_count(&self) -> Result<usize> {
+        self.tasks.iter().try_fold(0usize, |count, task| {
+            let splits = ScanBuilder::new(task.session.clone(), task.file.reader.clone())
+                .with_split_by(task.file.scan_splits())
+                .full_file_splits()
+                .map_err(to_iceberg_error)?;
+            Ok(count.saturating_add(splits.len().saturating_sub(1)))
+        })
+    }
+
     /// Static filters must be safe on rows later removed by deletes; the scan
     /// converter establishes this before passing predicates to the layouts.
     pub(crate) async fn prepare(
