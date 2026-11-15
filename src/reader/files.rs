@@ -107,7 +107,7 @@ impl FileCache {
             runtime,
             session,
             parquet: ParquetFormat::new()
-                .with_options(ReaderOptions::from_env().with_arrow_projection_decoding()),
+                .with_options(ReaderOptions::from_env().with_materialized_projections()),
             files: Cache::new(128),
         })
     }
