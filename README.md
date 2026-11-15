@@ -13,7 +13,7 @@ of `spiraldb/iceberg-rust`.
 
 ```toml
 [dependencies]
-coldfusion = { git = "https://github.com/spiraldb/coldfusion", rev = "3a2126a2ea2fcd8597f167e1eed390f4de53ec7b" }
+coldfusion = { git = "https://github.com/spiraldb/coldfusion", rev = "5c841b4e8d0492cdfdf274e48386e37c10d47b4a" }
 datafusion = { version = "=55.2.0", default-features = false, features = ["sql"] }
 ```
 
@@ -74,8 +74,9 @@ operations as safe for speculative evaluation; unknown operations are still acce
 inside the callback.
 
 Vortex and mixed-format scans use generation-aware live join filters and the same
-callback. Parquet-only scans push native dynamic bounds; expensive optional
-CASE/hash callbacks remain in DataFusion, which enforces the complete filter.
+callback. Parquet-only scans push native dynamic bounds and direct hash-membership
+hints. Opaque CASE and unsupported hints remain above the scan; the join enforces
+the complete predicate.
 After three nonempty evaluations retain every row, an opaque advisory callback
 may return true until its dynamic generation changes. The join still enforces
 the exact predicate. This heuristic avoids repeatedly evaluating redundant
