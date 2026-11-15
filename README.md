@@ -13,7 +13,7 @@ of `spiraldb/iceberg-rust`.
 
 ```toml
 [dependencies]
-coldfusion = { git = "https://github.com/spiraldb/coldfusion", rev = "5c841b4e8d0492cdfdf274e48386e37c10d47b4a" }
+coldfusion = { git = "https://github.com/spiraldb/coldfusion", rev = "a4c2b81bdfeedb9782080e6049bfaf6d634c9fdc" }
 datafusion = { version = "=55.2.0", default-features = false, features = ["sql"] }
 ```
 
@@ -38,8 +38,10 @@ fn register(table: Table) -> Result<SessionContext> {
 
 ## Scan behavior
 
-Scans expose at least two output partitions, using the session target when larger.
-Parquet work units are physical row groups. Vortex uses its native split planner
+Scans expose at least two output partitions. Parquet uses the smaller of the
+session target and available row-group tasks, with that minimum of two. DataFusion
+can repartition batches further for downstream computation. Vortex uses the session
+target and its native split planner
 to combine small spans and subdivide large ones, with the projection and filter. Small files can leave output partitions empty.
 Limits and ordering stay above the scan in DataFusion to preserve parallel outputs.
 
