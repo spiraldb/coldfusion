@@ -47,9 +47,9 @@ moka = { version = "0.12", features = ["future"] }
 parquet = "=59.3.2"
 serde_json = "1"
 tokio = { version = "1.47", default-features = false, features = ["rt-multi-thread", "sync"] }
-vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", features = ["tokio"] }
-vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", default-features = false }
-vortex-parquet = { git = "https://github.com/spiraldb/vortex-parquet", rev = "b8189efb125fc6b60fa767265cc41d7ef91233e9" }
+vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "d273f3a3f3d5929bde6c1519e106a19ddadb99dc", features = ["tokio"] }
+vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "d273f3a3f3d5929bde6c1519e106a19ddadb99dc", default-features = false }
+vortex-parquet = { git = "https://github.com/spiraldb/vortex-parquet", rev = "737c3b379c4a094551ac6bd15aeec3d805410568" }
 
 [dev-dependencies]
 # Only the Iceberg writer fixture uses Iceberg main's Vortex session type.

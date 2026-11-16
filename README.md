@@ -116,7 +116,8 @@ computed projections and sparse or page-pruned requests keep native page executi
 Reader and DataFusion integration changes stay in ColdFusion;
 Parquet layout improvements belong in vortex-parquet. That repository is currently
 Internal on GitHub, so building requires SpiralDB access and Git credentials.
-ColdFusion retains its existing Vortex Git pin for advisory expression conversion;
+ColdFusion's Vortex Git pin includes advisory expression conversion and generic
+chunk filtering; Parquet projections delegate chunk-mask routing to Vortex.
 Iceberg uses its own released Vortex internally. Vortex arrays do not cross that
 boundary.
 
