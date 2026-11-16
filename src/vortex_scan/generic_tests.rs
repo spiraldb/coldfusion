@@ -375,6 +375,192 @@ mod tests {
         );
     }
     #[test]
+    fn native_not_wraps_df_membership() {
+        use datafusion::physical_expr::expressions::NotExpr;
+        use vortex::scalar_fn::fns::not::Not;
+
+        let batch = input();
+        let expression: Arc<dyn PhysicalExpr> =
+            Arc::new(NotExpr::new(lookup(vec![Some(2)], 1, 17)));
+        let converted = try_convert(&expression, &batch.schema()).unwrap().unwrap();
+        assert!(converted.is::<Not>());
+        assert_eq!(
+            evaluate(&converted, &batch).to_data(),
+            expression
+                .evaluate(&batch)
+                .unwrap()
+                .into_array_of_size(6)
+                .unwrap()
+                .to_data()
+        );
+    }
+
+    #[test]
+    fn native_comparison_wraps_df_integer_arithmetic() {
+        use vortex::scalar_fn::fns::binary::Binary;
+
+        let batch = input();
+        let sum = binary(
+            Arc::new(Column::new("id", 1)),
+            Operator::Plus,
+            integer(i64::MAX),
+        );
+        let expression = binary(sum, Operator::Lt, integer(0));
+        let converted = try_convert(&expression, &batch.schema()).unwrap().unwrap();
+        assert!(converted.is::<Binary>());
+        assert_eq!(
+            evaluate(&converted, &batch).to_data(),
+            expression
+                .evaluate(&batch)
+                .unwrap()
+                .into_array_of_size(6)
+                .unwrap()
+                .to_data()
+        );
+    }
+
+    #[test]
+    fn native_searched_case_keeps_df_errors_in_selected_branches() {
+        use vortex::scalar_fn::fns::case_when::CaseWhen;
+
+        let batch = input();
+        let id: Arc<dyn PhysicalExpr> = Arc::new(Column::new("id", 1));
+        let expression: Arc<dyn PhysicalExpr> = Arc::new(
+            CaseExpr::try_new(
+                None,
+                vec![(binary(id.clone(), Operator::Eq, integer(2)), integer(7))],
+                Some(binary(
+                    integer(1),
+                    Operator::Divide,
+                    binary(id, Operator::Minus, integer(2)),
+                )),
+            )
+            .unwrap(),
+        );
+        let converted = try_convert(&expression, &batch.schema()).unwrap().unwrap();
+        assert!(converted.is::<CaseWhen>());
+        assert_eq!(
+            result(&converted, &batch, DataType::Int64).to_data(),
+            expression
+                .evaluate(&batch)
+                .unwrap()
+                .into_array_of_size(6)
+                .unwrap()
+                .to_data()
+        );
+    }
+
+    #[test]
+    fn advisory_not_keeps_error_fallback_outside_negation() {
+        use datafusion::physical_expr::expressions::NotExpr;
+
+        let batch = input();
+        let invalid = binary(
+            binary(Arc::new(Column::new("id", 1)), Operator::Divide, integer(0)),
+            Operator::Gt,
+            integer(0),
+        );
+        let expression: Arc<dyn PhysicalExpr> = Arc::new(NotExpr::new(invalid));
+        let converted = ScanExpressionConverter::new(VortexSession::default())
+            .try_convert_dynamic(&expression, &batch.schema())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            evaluate(&converted, &batch)
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap()
+                .true_count(),
+            6
+        );
+    }
+
+    #[test]
+    fn constant_negation_keeps_datafusion_scalar_overflow() {
+        use datafusion::physical_expr::expressions::{CastExpr, NegativeExpr};
+
+        let batch = input();
+        let expression: Arc<dyn PhysicalExpr> = Arc::new(NegativeExpr::new(Arc::new(
+            CastExpr::new(integer(i64::MIN), DataType::Int64, None),
+        )));
+        assert!(expression.evaluate(&batch).is_err());
+        let converted = try_convert(&expression, &batch.schema()).unwrap().unwrap();
+        let session = VortexSession::default();
+        let array = session
+            .arrow()
+            .from_arrow_record_batch(batch.clone(), &batch.schema())
+            .unwrap();
+        let actual = array.apply(&converted).and_then(|array| {
+            array.execute_arrow(
+                Some(&Field::new("result", DataType::Int64, true)),
+                &mut session.create_execution_ctx(),
+            )
+        });
+        assert!(actual.is_err());
+    }
+
+    #[test]
+    fn unsupported_lambda_body_falls_back_at_the_enclosing_function() {
+        use datafusion::arrow::array::ListArray;
+        use datafusion::arrow::datatypes::Int64Type;
+        use datafusion::common::config::ConfigOptions;
+        use datafusion::logical_expr::HigherOrderUDF;
+        use datafusion::physical_expr::HigherOrderFunctionExpr;
+        use datafusion::physical_expr::expressions::{LambdaExpr, LambdaVariable};
+        use datafusion_functions_nested::array_transform::ArrayTransform;
+
+        let lists = ListArray::from_iter_primitive::<Int64Type, _, _>([
+            Some(vec![Some(i64::MAX), Some(1)]),
+            None,
+        ]);
+        let batch =
+            RecordBatch::try_from_iter(vec![("xs", Arc::new(lists) as ArrowArrayRef)]).unwrap();
+        let DataType::List(element) = batch.schema().field(0).data_type().clone() else {
+            panic!()
+        };
+        let variable = Arc::new(LambdaVariable::new(
+            1,
+            Arc::new(element.as_ref().clone().with_name("x")),
+        ));
+        let lambda = LambdaExpr::try_new(
+            vec!["x".into()],
+            binary(variable, Operator::Plus, integer(1)),
+        )
+        .unwrap();
+        let expression: Arc<dyn PhysicalExpr> = Arc::new(
+            HigherOrderFunctionExpr::try_new_with_schema(
+                Arc::new(HigherOrderUDF::new_from_impl(ArrayTransform::new())),
+                vec![Arc::new(Column::new("xs", 0)), Arc::new(lambda)],
+                &batch.schema(),
+                Arc::new(ConfigOptions::new()),
+            )
+            .unwrap(),
+        );
+        let converted = try_convert(&expression, &batch.schema()).unwrap().unwrap();
+        assert_eq!(
+            result(
+                &converted,
+                &batch,
+                expression.data_type(&batch.schema()).unwrap()
+            )
+            .to_data(),
+            expression
+                .evaluate(&batch)
+                .unwrap()
+                .into_array_of_size(2)
+                .unwrap()
+                .to_data()
+        );
+    }
+
+    #[test]
+    fn invalid_column_reference_remains_a_conversion_error() {
+        let batch = input();
+        let invalid: Arc<dyn PhysicalExpr> = Arc::new(Column::new("missing", 1));
+        assert!(try_convert(&invalid, &batch.schema()).is_err());
+    }
+
+    #[test]
     fn membership_rejects_volatile_siblings() {
         use datafusion::common::config::ConfigOptions;
         use datafusion::physical_expr::ScalarFunctionExpr;

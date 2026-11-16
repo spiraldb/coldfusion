@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use datafusion::arrow::array::{Array, BooleanArray};
-use datafusion::arrow::datatypes::{FieldRef, Schema, SchemaRef};
+use datafusion::arrow::datatypes::{DataType, FieldRef, Schema, SchemaRef};
 use datafusion::arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use datafusion::common::{DataFusionError, Result};
 use datafusion::physical_expr::PhysicalExpr;
@@ -37,8 +37,8 @@ use vortex::scalar::Scalar;
 use vortex::scalar_fn::{
     Arity, ChildName, ExecutionArgs, ScalarFnId, ScalarFnVTable, ScalarFnVTableExt,
 };
+use vortex::session::VortexSession;
 
-use super::convert::{NativeCandidates, ScanExpressionConverter};
 use super::properties;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -48,11 +48,11 @@ pub(super) enum Mode {
 }
 
 pub(super) fn lower(
-    converter: &ScanExpressionConverter,
+    session: &VortexSession,
     expr: &Arc<dyn PhysicalExpr>,
     schema: &Schema,
     mode: Mode,
-    candidates: &mut NativeCandidates,
+    convert: impl FnMut(&Arc<dyn PhysicalExpr>) -> Result<Option<Expression>>,
 ) -> Result<Option<Expression>> {
     let mut output = expr.return_field(schema)?.as_ref().clone();
     let nullable = output.is_nullable() || expr.nullable(schema)?;
@@ -64,12 +64,11 @@ pub(super) fn lower(
         return Ok(None);
     }
     let output = Arc::new(output);
-    let Ok(dtype) = converter.session.arrow().from_arrow_field(&output) else {
+    let Ok(dtype) = session.arrow().from_arrow_field(&output) else {
         return Ok(None); // A valid Arrow result need not have a Vortex representation.
     };
     let mut extraction = Extraction {
-        converter,
-        candidates,
+        convert,
         schema,
         mode,
         inputs: vec![],
@@ -81,7 +80,7 @@ pub(super) fn lower(
     let Ok(input_dtypes) = input_schema
         .fields()
         .iter()
-        .map(|field| converter.session.arrow().from_arrow_field(field))
+        .map(|field| session.arrow().from_arrow_field(field))
         .collect::<VortexResult<Vec<_>>>()
     else {
         return Ok(None);
@@ -102,8 +101,7 @@ pub(super) fn lower(
         .map_err(|error| DataFusionError::External(Box::new(error)))
 }
 
-fn contains_decimal(dtype: &datafusion::arrow::datatypes::DataType) -> bool {
-    use datafusion::arrow::datatypes::DataType;
+fn contains_decimal(dtype: &DataType) -> bool {
     match dtype {
         DataType::Decimal32(..)
         | DataType::Decimal64(..)
@@ -124,16 +122,17 @@ fn contains_decimal(dtype: &datafusion::arrow::datatypes::DataType) -> bool {
     }
 }
 
-struct Extraction<'a> {
-    converter: &'a ScanExpressionConverter,
-    candidates: &'a mut NativeCandidates,
+struct Extraction<'a, F> {
+    convert: F,
     schema: &'a Schema,
     mode: Mode,
     inputs: Vec<Expression>,
     originals: Vec<Arc<dyn PhysicalExpr>>,
     fields: Vec<FieldRef>,
 }
-impl Extraction<'_> {
+impl<F> Extraction<'_, F>
+where F: FnMut(&Arc<dyn PhysicalExpr>) -> Result<Option<Expression>>
+{
     fn input(
         &mut self,
         original: &Arc<dyn PhysicalExpr>,
@@ -183,11 +182,16 @@ impl Extraction<'_> {
         if expr.is::<Literal>() {
             return Ok(expr.clone());
         }
+        // Once a Hint region may fail, keep its descendants in the same callback
+        // instead of repeatedly proving overlapping suffixes of that region.
+        let allow_native = allow_native
+            && (self.mode == Mode::Exact || !child || properties::infallible(expr, self.schema));
+        // Preserve Scalar versus Array arguments: DF's scalar arithmetic can check
+        // overflow where its array arithmetic wraps. Unknown result shapes stay in DF.
         if child
             && allow_native
-            && let Some(native) = self
-                .converter
-                .native_with(expr, self.schema, self.candidates)?
+            && properties::array_valued(expr)
+            && let Some(native) = (self.convert)(expr)?
             && (self.mode == Mode::Exact || native_infallible(&native))
         {
             return self.input(expr, native);

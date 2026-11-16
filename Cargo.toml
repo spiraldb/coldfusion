@@ -39,14 +39,18 @@ include = [
 
 [dependencies]
 arrow-row = "59.3.2"
+arrow-schema = "59.3.2"
 async-trait = "0.1.89"
 datafusion = { version = "=55.2.0", default-features = false, features = ["parquet"] }
+datafusion-functions-nested = "=55.2.0"
 futures = "0.3"
 iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "a24f97231aa263bcc8f62b3ee07b32a1055cbabb", default-features = false }
+itertools = "0.14"
 moka = { version = "0.12", features = ["future"] }
 parquet = "=59.3.2"
 serde_json = "1"
 tokio = { version = "1.47", default-features = false, features = ["rt-multi-thread", "sync"] }
+tracing = "0.1"
 vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", features = ["tokio"] }
 vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", default-features = false }
 vortex-parquet = { git = "https://github.com/spiraldb/vortex-parquet", rev = "b8189efb125fc6b60fa767265cc41d7ef91233e9" }

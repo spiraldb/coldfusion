@@ -6,3 +6,6 @@ The Apache Software Foundation (http://www.apache.org/).
 
 ColdFusion includes a table provider adapted from the iceberg-datafusion
 integration in spiraldb/iceberg-rust.
+
+ColdFusion includes expression conversion code adapted from Vortex
+(vortex-data/vortex), copyright the Vortex contributors, licensed under Apache-2.0.

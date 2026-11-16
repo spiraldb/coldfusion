@@ -68,8 +68,10 @@ redundant DataFusion residuals. `with_exact_filter_pushdown(false)` retains thos
 residuals. Both formats always use the shared Vortex readers and expression converter.
 
 The shared source uses one converter for static filters and computed
-projections. It extracts compatible native subtrees and embeds remaining synchronous
-DataFusion expressions as a typed, process-local `DFScalarFn`. Volatile expressions
+projections. Its native conversion is copied from the pinned Vortex converter (the
+source revision is recorded in `src/vortex_scan/expression.rs`). Each recursive node
+tries native conversion before embedding an unsupported fragment as a typed,
+process-local `DFScalarFn`, so native parents can contain callback children. Volatile expressions
 stay in DataFusion. Conditional branches remain together unless extraction preserves
 their evaluation domain. A small conservative tree walk marks only proven infallible
 operations as safe for speculative evaluation; unknown operations are still accepted

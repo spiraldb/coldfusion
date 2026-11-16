@@ -18,6 +18,7 @@
 mod convert;
 mod df_scalar;
 mod dynamic;
+mod expression;
 #[cfg(test)]
 mod generic_tests;
 mod parallel;

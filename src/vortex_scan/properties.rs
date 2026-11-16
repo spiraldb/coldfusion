@@ -22,7 +22,8 @@ use datafusion::arrow::datatypes::{DataType, Schema};
 use datafusion::logical_expr::Operator;
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_expr::expressions::{
-    BinaryExpr, Column, InListExpr, IsNotNullExpr, IsNullExpr, Literal, NotExpr,
+    BinaryExpr, CastExpr, Column, InListExpr, IsNotNullExpr, IsNullExpr, Literal, NegativeExpr,
+    NotExpr, TryCastExpr,
 };
 
 pub(super) fn infallible(expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> bool {
@@ -92,7 +93,6 @@ fn comparable(dtype: &DataType) -> bool {
 pub(super) fn conditional(expr: &Arc<dyn PhysicalExpr>) -> bool {
     // Unknown custom nodes and UDFs stay opaque. Only these known eager operators
     // permit extracting non-column children into eagerly evaluated Vortex inputs.
-    use datafusion::physical_expr::expressions::{CastExpr, NegativeExpr, TryCastExpr};
     !(expr.is::<Column>()
         || expr.is::<Literal>()
         || expr.is::<CastExpr>()
@@ -104,4 +104,22 @@ pub(super) fn conditional(expr: &Arc<dyn PhysicalExpr>) -> bool {
         || expr
             .downcast_ref::<BinaryExpr>()
             .is_some_and(|binary| !matches!(binary.op(), Operator::And | Operator::Or)))
+}
+
+/// Known DF operators whose result is an array, rather than a possibly checked scalar.
+pub(super) fn array_valued(expr: &Arc<dyn PhysicalExpr>) -> bool {
+    if expr.is::<Column>() {
+        true
+    } else if let Some(binary) = expr.downcast_ref::<BinaryExpr>() {
+        !matches!(binary.op(), Operator::And | Operator::Or)
+            && (array_valued(binary.left()) || array_valued(binary.right()))
+    } else {
+        (expr.is::<CastExpr>()
+            || expr.is::<TryCastExpr>()
+            || expr.is::<NegativeExpr>()
+            || expr.is::<NotExpr>()
+            || expr.is::<IsNullExpr>()
+            || expr.is::<IsNotNullExpr>())
+            && expr.children().into_iter().any(array_valued)
+    }
 }

@@ -15,35 +15,33 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use datafusion::arrow::datatypes::{DataType, Schema};
 use datafusion::common::Result;
 use datafusion::functions::core::getfield::GetFieldFunc;
 use datafusion::logical_expr::Operator;
-use datafusion::physical_expr::expressions::{BinaryExpr, CastExpr, InListExpr, NegativeExpr};
+use datafusion::physical_expr::async_scalar_function::AsyncFuncExpr;
+use datafusion::physical_expr::expressions::{BinaryExpr, InListExpr, NegativeExpr};
 use datafusion::physical_expr::projection::ProjectionExprs;
-use datafusion::physical_expr::{PhysicalExpr, ScalarFunctionExpr};
-use datafusion::physical_plan::joins::HashTableLookupExpr;
+use datafusion::physical_expr::{DynamicFilterTracking, PhysicalExpr, ScalarFunctionExpr};
+use datafusion::physical_expr_common::physical_expr::is_volatile;
 use vortex::expr::Expression;
 use vortex::session::VortexSession;
-use vortex_datafusion::convert::{
-    DefaultExpressionConverter, ExpressionConverter, ProcessedProjection,
-};
+use vortex_datafusion::convert::{ExpressionConverter, ProcessedProjection};
 
 use super::df_scalar::{Mode, native_infallible};
+use super::dynamic::lower as lower_dynamic;
+use super::expression::Converter;
 
 #[derive(Clone)]
 pub(super) struct ScanExpressionConverter {
-    native: Arc<DefaultExpressionConverter>,
     pub(super) session: VortexSession,
     native_or_membership_dynamic_hints: bool,
 }
 impl ScanExpressionConverter {
     pub(super) fn new(session: VortexSession) -> Self {
         Self {
-            native: Arc::new(DefaultExpressionConverter::new(session.clone())),
             session,
             native_or_membership_dynamic_hints: false,
         }
@@ -61,19 +59,9 @@ impl ScanExpressionConverter {
         expr: &Arc<dyn PhysicalExpr>,
         schema: &Schema,
     ) -> Result<Option<Expression>> {
-        self.native_with(expr, schema, &mut NativeCandidates::default())
-    }
-    pub(super) fn native_with(
-        &self,
-        expr: &Arc<dyn PhysicalExpr>,
-        schema: &Schema,
-        candidates: &mut NativeCandidates,
-    ) -> Result<Option<Expression>> {
-        if candidates.allows(expr, schema)? {
-            self.native.try_convert(expr, schema)
-        } else {
-            Ok(None)
-        }
+        Converter::new(self, Mode::Exact)
+            .without_fallback()
+            .try_convert(expr, schema)
     }
     pub(super) fn lower(
         &self,
@@ -81,8 +69,6 @@ impl ScanExpressionConverter {
         schema: &Schema,
         mode: Mode,
     ) -> Result<Option<Expression>> {
-        use datafusion::physical_expr::DynamicFilterTracking;
-        use datafusion::physical_expr_common::physical_expr::is_volatile;
         if is_volatile(expr) || contains_async(expr) {
             return Ok(None);
         }
@@ -92,56 +78,12 @@ impl ScanExpressionConverter {
             if mode == Mode::Exact || expr.data_type(schema)? != DataType::Boolean {
                 return Ok(None);
             }
-            return super::dynamic::lower(self, expr.clone(), schema, mode).map(Some);
+            return lower_dynamic(self, expr.clone(), schema, mode).map(Some);
         }
         if mode == Mode::Hint && expr.data_type(schema)? != DataType::Boolean {
             return Ok(None);
         }
-        self.lower_static(expr, schema, mode, &mut NativeCandidates::default())
-    }
-    // The outer entry already checked volatility/async/dynamic state for the tree.
-    // Reuse one eligibility/proof memo while splitting a Boolean snapshot.
-    fn lower_static(
-        &self,
-        expr: &Arc<dyn PhysicalExpr>,
-        schema: &Schema,
-        mode: Mode,
-        candidates: &mut NativeCandidates,
-    ) -> Result<Option<Expression>> {
-        if let Some(native) = self.native_with(expr, schema, candidates)?
-            && (mode == Mode::Exact || native_infallible(&native))
-        {
-            return Ok(Some(native));
-        }
-        // Advisory predicates may only retain extra rows. AND/OR are monotone,
-        // so conservative children remain conservative together. Exposing native
-        // bounds here lets Vortex prune before evaluating opaque membership.
-        // NOT and conditional branches must remain inside one DF callback.
-        if mode == Mode::Hint
-            && let Some(binary) = expr.downcast_ref::<BinaryExpr>()
-            && matches!(binary.op(), Operator::And | Operator::Or)
-        {
-            let left = self
-                .lower_static(binary.left(), schema, mode, candidates)?
-                .unwrap_or_else(|| vortex::expr::lit(true));
-            let right = self
-                .lower_static(binary.right(), schema, mode, candidates)?
-                .unwrap_or_else(|| vortex::expr::lit(true));
-            let operator = if *binary.op() == Operator::And {
-                vortex::scalar_fn::fns::operators::Operator::And
-            } else {
-                vortex::scalar_fn::fns::operators::Operator::Or
-            };
-            return Ok(Some(vortex::expr::binary(operator, left, right)));
-        }
-        // Keep direct membership in DF's evaluator; other opaque hints may retain extra rows.
-        if mode == Mode::Hint
-            && self.native_or_membership_dynamic_hints
-            && !expr.is::<HashTableLookupExpr>()
-        {
-            return Ok(None);
-        }
-        super::df_scalar::lower(self, expr, schema, mode, candidates)
+        Converter::new(self, mode).try_convert(expr, schema)
     }
 }
 impl ExpressionConverter for ScanExpressionConverter {
@@ -194,91 +136,10 @@ impl ExpressionConverter for DeleteSafeConverter {
 }
 
 fn contains_async(expr: &Arc<dyn PhysicalExpr>) -> bool {
-    expr.is::<datafusion::physical_expr::async_scalar_function::AsyncFuncExpr>()
-        || expr.children().into_iter().any(contains_async)
+    expr.is::<AsyncFuncExpr>() || expr.children().into_iter().any(contains_async)
 }
 
-/// Negative native eligibility is memoized per lowering, not per query/session.
-/// Positive entries are only candidates: the shared Vortex converter remains authoritative.
-/// This prevents retrying an unsupported subtree under every enclosing NOT/concat/etc.
-#[derive(Default)]
-pub(super) struct NativeCandidates {
-    allowed: HashMap<usize, bool>,
-    infallible: HashMap<usize, bool>,
-}
-impl NativeCandidates {
-    fn infallible(&mut self, expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> bool {
-        let key = Arc::as_ptr(expr) as *const () as usize;
-        if let Some(proof) = self.infallible.get(&key) {
-            return *proof;
-        }
-        let proof = super::properties::infallible_node(expr, schema)
-            && expr
-                .children()
-                .into_iter()
-                .all(|child| self.infallible(child, schema));
-        self.infallible.insert(key, proof);
-        proof
-    }
-    fn allows(&mut self, expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> Result<bool> {
-        use datafusion::physical_expr::expressions::{
-            CaseExpr, Column, IsNotNullExpr, IsNullExpr, LikeExpr, Literal, NotExpr,
-        };
-        let key = Arc::as_ptr(expr) as *const () as usize;
-        if let Some(allowed) = self.allowed.get(&key) {
-            return Ok(*allowed);
-        }
-        let shape = if let Some(binary) = expr.downcast_ref::<BinaryExpr>() {
-            matches!(
-                binary.op(),
-                Operator::Eq
-                    | Operator::NotEq
-                    | Operator::Lt
-                    | Operator::LtEq
-                    | Operator::Gt
-                    | Operator::GtEq
-                    | Operator::And
-                    | Operator::Or
-                    | Operator::Plus
-                    | Operator::Minus
-                    | Operator::Multiply
-                    | Operator::Divide
-            ) && (!matches!(binary.op(), Operator::And | Operator::Or)
-                || self.infallible(expr, schema))
-        } else if let Some(list) = expr.downcast_ref::<InListExpr>() {
-            list.list().iter().all(|item| item.is::<Literal>())
-                && self.infallible(list.expr(), schema)
-        } else if let Some(case) = expr.downcast_ref::<CaseExpr>() {
-            case.expr().is_none()
-        } else if expr.is::<ScalarFunctionExpr>() {
-            true
-        } else {
-            expr.is::<Column>()
-                || expr.is::<Literal>()
-                || expr.is::<CastExpr>()
-                || expr.is::<NotExpr>()
-                || expr.is::<IsNullExpr>()
-                || expr.is::<IsNotNullExpr>()
-                || expr.is::<LikeExpr>()
-        };
-        let mut allowed = shape;
-        if allowed {
-            for child in expr.children() {
-                if !self.allows(child, schema)? {
-                    allowed = false;
-                    break;
-                }
-            }
-        }
-        if allowed {
-            allowed = compatible(expr, schema)?;
-        }
-        self.allowed.insert(key, allowed);
-        Ok(allowed)
-    }
-}
-
-fn compatible(expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> Result<bool> {
+pub(super) fn compatible(expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> Result<bool> {
     // Vortex distinguishes signed zeros in comparisons; DataFusion considers them equal.
     if let Some(binary) = expr.downcast_ref::<BinaryExpr>()
         && matches!(
@@ -336,7 +197,7 @@ fn compatible(expr: &Arc<dyn PhysicalExpr>, schema: &Schema) -> Result<bool> {
     {
         return Ok(false);
     }
-    // Cast compatibility belongs to the shared Vortex converter, including supported
+    // Cast compatibility belongs to the copied Vortex converter, including supported
     // lossy conversions. Keep no second cast allowlist here.
     Ok(true)
 }
@@ -378,7 +239,7 @@ fn compatible_decimal_arithmetic(binary: &BinaryExpr, schema: &Schema) -> Result
 mod tests {
     use datafusion::arrow::datatypes::Field;
     use datafusion::common::ScalarValue;
-    use datafusion::physical_expr::expressions::{Column, Literal};
+    use datafusion::physical_expr::expressions::{CastExpr, Column, Literal};
     use vortex::VortexSessionDefault;
 
     use super::*;
@@ -469,7 +330,7 @@ mod tests {
                 .unwrap();
             assert_eq!(&actual, &expected, "{cast}");
         }
-        // Native support is deliberately delegated to the shared converter, which
+        // Native support follows the copied Vortex converter, which
         // still declines casts that need different failure or decimal semantics.
         let signed = Arc::new(Column::new("signed", 0));
         let narrowing: Arc<dyn PhysicalExpr> =
