@@ -37,7 +37,7 @@ mod tests {
     use vortex::VortexSessionDefault;
     use vortex::array::VortexSessionExecute;
     use vortex::arrow::{ArrowSessionExt, ExecuteArrowExt};
-    use vortex::expr::Expression;
+    use vortex::expr::{ArrayExprExt, Expression};
     use vortex::session::VortexSession;
     use vortex_datafusion::convert::ExpressionConverter;
 
@@ -57,12 +57,17 @@ mod tests {
         create_hashes(&[values], state.random_state(), &mut hashes).unwrap();
         let mut map = JoinHashMapU32::with_capacity(hashes.len());
         map.update_from_iter(Box::new(hashes.iter().enumerate()), 0);
-        Arc::new(HashTableLookupExpr::new(
-            vec![Arc::new(Column::new("id", column))],
-            state,
-            Arc::new(Map::HashMap(Box::new(map))),
-            "test_lookup".into(),
-        ))
+        Arc::new(
+            HashTableLookupExpr::new(
+                vec![Arc::new(Column::new("id", column))],
+                state,
+                None,
+                vec![Some(Arc::new(Map::HashMap(Box::new(map))))],
+                "test_lookup".into(),
+                None,
+            )
+            .unwrap(),
+        )
     }
 
     fn input() -> RecordBatch {
@@ -292,12 +297,17 @@ mod tests {
         .unwrap();
         let mut map = JoinHashMapU32::with_capacity(1);
         map.update_from_iter(Box::new(hashes.iter().enumerate()), 0);
-        let expression: Arc<dyn PhysicalExpr> = Arc::new(HashTableLookupExpr::new(
-            vec![Arc::new(Column::new("a", 0)), Arc::new(Column::new("b", 1))],
-            state,
-            Arc::new(Map::HashMap(Box::new(map))),
-            "composite".into(),
-        ));
+        let expression: Arc<dyn PhysicalExpr> = Arc::new(
+            HashTableLookupExpr::new(
+                vec![Arc::new(Column::new("a", 0)), Arc::new(Column::new("b", 1))],
+                state,
+                None,
+                vec![Some(Arc::new(Map::HashMap(Box::new(map))))],
+                "composite".into(),
+                None,
+            )
+            .unwrap(),
+        );
         let converted = try_convert(&expression, &batch.schema()).unwrap().unwrap();
         let actual = evaluate(&converted, &batch);
         assert_eq!(

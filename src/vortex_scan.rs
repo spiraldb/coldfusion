@@ -46,7 +46,7 @@ pub(crate) async fn scan(
     provider: &IcebergTableProvider,
     tasks: &[FileScanTask],
     filters: &[Expr],
-    projection: Option<&Vec<usize>>,
+    projection: Option<&[usize]>,
     state: &dyn Session,
 ) -> Result<Arc<dyn ExecutionPlan>> {
     let table = &provider.table;
@@ -129,7 +129,7 @@ pub(crate) async fn scan(
         .map(|count| count.max(2));
     let source = VortexDataSource::builder(Arc::new(source), session.clone())
         .with_arrow_schema(schema)
-        .with_some_projection(projection.cloned())
+        .with_some_projection(projection.map(|indices| indices.to_vec()))
         .with_expression_converter(filter_converter)
         .build()
         .await

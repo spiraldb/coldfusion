@@ -27,6 +27,7 @@ use datafusion::physical_expr::projection::ProjectionExprs;
 use datafusion::physical_expr::{PhysicalExpr, ScalarFunctionExpr};
 use datafusion::physical_plan::joins::HashTableLookupExpr;
 use vortex::expr::Expression;
+use vortex::scalar_fn::builtin::operators::BooleanOperator;
 use vortex::session::VortexSession;
 use vortex_datafusion::convert::{
     DefaultExpressionConverter, ExpressionConverter, ProcessedProjection,
@@ -128,9 +129,9 @@ impl ScanExpressionConverter {
                 .lower_static(binary.right(), schema, mode, candidates)?
                 .unwrap_or_else(|| vortex::expr::lit(true));
             let operator = if *binary.op() == Operator::And {
-                vortex::scalar_fn::fns::operators::Operator::And
+                BooleanOperator::And
             } else {
-                vortex::scalar_fn::fns::operators::Operator::Or
+                BooleanOperator::Or
             };
             return Ok(Some(vortex::expr::binary(operator, left, right)));
         }
@@ -380,6 +381,7 @@ mod tests {
     use datafusion::common::ScalarValue;
     use datafusion::physical_expr::expressions::{Column, Literal};
     use vortex::VortexSessionDefault;
+    use vortex::expr::ArrayExprExt;
 
     use super::*;
 

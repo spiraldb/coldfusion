@@ -1,6 +1,6 @@
 # Coldfusion
 
-Coldfusion is a read-only Iceberg table provider for DataFusion 55.2. It reads
+Coldfusion is a read-only Iceberg table provider for DataFusion 56. It reads
 Parquet through [vortex-parquet](https://github.com/spiraldb/vortex-parquet) and
 Vortex through its native layouts, using one expression and scan pipeline. A table may contain either format or a mixture
 of both. DataFusion is unmodified.
@@ -13,8 +13,8 @@ of `spiraldb/iceberg-rust`.
 
 ```toml
 [dependencies]
-coldfusion = { git = "https://github.com/spiraldb/coldfusion", rev = "a4c2b81bdfeedb9782080e6049bfaf6d634c9fdc" }
-datafusion = { version = "=55.2.0", default-features = false, features = ["sql"] }
+coldfusion = { git = "https://github.com/spiraldb/coldfusion", branch = "main" }
+datafusion = { version = "=56.0.0", default-features = false, features = ["sql"] }
 ```
 
 Use the re-exported Iceberg crate when constructing the table, so its types match
@@ -110,15 +110,14 @@ scan planning also needs to discover natural work units.
 `Cargo.toml` and `Cargo.lock` pin exact Git revisions for
 [spiraldb/iceberg-rust](https://github.com/spiraldb/iceberg-rust) and
 [vortex-parquet](https://github.com/spiraldb/vortex-parquet). No local Cargo patches
-are required. Dense identity projections use arrow-rs bulk decoding after the
-final row mask;
-computed projections and sparse or page-pruned requests keep native page execution.
+are required. Parquet uses the public vortex-parquet `main` revision, with native
+page execution and its Arrow fallback for unsupported nested shapes.
 Reader and DataFusion integration changes stay in ColdFusion;
-Parquet layout improvements belong in vortex-parquet. That repository is currently
-Internal on GitHub, so building requires SpiralDB access and Git credentials.
-ColdFusion retains its existing Vortex Git pin for advisory expression conversion;
-Iceberg uses its own released Vortex internally. Vortex arrays do not cross that
-boundary.
+Parquet layout improvements belong in vortex-parquet. All Git dependencies are public.
+Vortex core and its DataFusion adapter use the same upstream `develop` revision,
+including the merged advisory-conversion API. Iceberg uses its own released Vortex
+internally; Vortex arrays do not cross that boundary. Its Arrow 59 schemas cross
+the stable Arrow C Data Interface into DataFusion's Arrow 60.
 
 ## Validation
 
@@ -126,7 +125,7 @@ boundary.
 cargo test --locked --test provider
 cargo test --locked --lib
 cargo clippy --locked --all-targets -- -D warnings
-cargo fmt --all -- --check
+cargo +nightly-2026-11-13 fmt --all -- --check
 ```
 
 Real-file tests cover independent parallel consumers, projections, renames,

@@ -329,7 +329,7 @@ impl ScalarFnVTable for DFScalarFn {
             && !mask.is_empty()
         {
             if mask.true_count() == mask.len() {
-                let _ = count.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+                let _ = count.try_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
                     Some(count.saturating_add(1))
                 });
             } else {

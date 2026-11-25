@@ -15,10 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# iceberg-rust use unstable rust to run linters, such as `clippy` and `rustfmt`. But this will not affect downstream users,
-# and only MSRV is required.
-#
-# The channel is exactly same day for our MSRV.
+# Match the compiler used by the pinned Vortex revision.
 [toolchain]
-channel = "nightly-2026-04-16"
+channel = "1.100.0"
 components = ["rustfmt", "clippy"]

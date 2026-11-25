@@ -20,12 +20,14 @@
 mod deletes;
 mod files;
 mod nested;
+mod parquet;
 mod schema;
 #[cfg(test)]
 mod tests;
 
 use std::any::Any;
 use std::collections::HashMap;
+use std::error::Error as StdError;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,7 +38,6 @@ use datafusion::arrow::datatypes::DataType;
 pub(crate) use files::FileCache;
 use files::OpenedFile;
 use futures::{StreamExt, TryStreamExt, stream};
-use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::scan::FileScanTask;
 use iceberg::spec::SchemaRef;
 use iceberg::{Error, ErrorKind, Result};
@@ -45,7 +46,7 @@ use vortex::array::stats::StatsSet;
 use vortex::array::stream::{ArrayStreamAdapter, SendableArrayStream};
 use vortex::arrow::ArrowSessionExt;
 use vortex::dtype::{DType, Field, FieldPath};
-use vortex::error::{VortexError, VortexResult};
+use vortex::error::VortexResult;
 use vortex::expr::stats::{Precision, Stat};
 use vortex::expr::transform::replace;
 use vortex::expr::{BoundExpression, Expression, and_collect, root};
@@ -58,7 +59,9 @@ use vortex::scan::{
 };
 use vortex::session::VortexSession;
 
-fn to_iceberg_error(error: VortexError) -> Error {
+use crate::arrow::schema_to_arrow_schema;
+
+fn to_iceberg_error(error: impl StdError + Send + Sync + 'static) -> Error {
     Error::new(ErrorKind::Unexpected, "Vortex scan failed").with_source(error)
 }
 

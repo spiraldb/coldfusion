@@ -26,7 +26,6 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::{StreamExt, TryStreamExt};
 use iceberg::Runtime;
-use iceberg::arrow::{arrow_schema_to_schema_auto_assign_ids, schema_to_arrow_schema};
 use iceberg::io::FileIO;
 use iceberg::scan::{FileScanTask, FileScanTaskDeleteFile};
 use iceberg::spec::{
@@ -43,6 +42,7 @@ use vortex::scan::selection::Selection;
 use vortex::scan::{DataSource, ScanRequest};
 
 use super::{FileCache, IcebergSource};
+use crate::arrow::{arrow_schema_to_schema_auto_assign_ids, schema_to_arrow_schema};
 
 #[tokio::test]
 async fn natural_partitions_combine_row_ranges_selections_and_a_shared_limit() {

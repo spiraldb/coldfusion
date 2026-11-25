@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use arrow::{arrow_schema_to_schema_auto_assign_ids, schema_to_arrow_schema};
 use coldfusion::{IcebergTableProvider, iceberg};
 use datafusion::arrow::array::{
     ArrayRef, BinaryViewArray, BooleanArray, Float64Array, Int32Array, Int64Array,
@@ -46,7 +47,11 @@ use datafusion::physical_plan::{
 use datafusion::prelude::{SessionConfig, SessionContext, col, lit};
 use datafusion::scalar::ScalarValue;
 use futures::{StreamExt, TryStreamExt};
-use iceberg::arrow::{arrow_schema_to_schema_auto_assign_ids, schema_to_arrow_schema};
+
+#[path = "../src/arrow.rs"]
+mod arrow;
+#[path = "support/arrow.rs"]
+mod iceberg_arrow;
 use iceberg::io::LocalFsStorageFactory;
 use iceberg::memory::{MEMORY_CATALOG_WAREHOUSE, MemoryCatalogBuilder};
 use iceberg::metadata_columns::{
@@ -64,12 +69,15 @@ use iceberg::writer::file_writer::{
     FileWriter, FileWriterBuilder, ParquetWriterBuilder, VortexWriterBuilder,
 };
 use iceberg::{Catalog, CatalogBuilder, MemoryCatalog, NamespaceIdent, Runtime, TableCreation};
+use iceberg_arrow::batch_for_iceberg;
 use iceberg_vortex::VortexSessionDefault as _;
 use iceberg_vortex::session::VortexSession as IcebergVortexSession;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::{ArrowWriter, PARQUET_FIELD_ID_META_KEY};
-use parquet::basic::Compression;
-use parquet::file::properties::{EnabledStatistics, WriterProperties};
+use parquet_iceberg::basic::Compression as IcebergCompression;
+use parquet_iceberg::file::properties::{
+    EnabledStatistics as IcebergEnabledStatistics, WriterProperties as IcebergWriterProperties,
+};
 use tempfile::TempDir;
 
 const ROWS: i64 = 257;
@@ -231,10 +239,11 @@ impl Fixture {
     async fn write_batch(&mut self, path: &str, format: DataFileFormat, batch: &RecordBatch) {
         let output = self.table.file_io().new_output(path).unwrap();
         let schema = self.table.metadata().current_schema().clone();
+        let iceberg_batch = batch_for_iceberg(batch).unwrap();
         let files = match format {
             DataFileFormat::Parquet => {
                 let mut writer = ParquetWriterBuilder::new(
-                    WriterProperties::builder()
+                    IcebergWriterProperties::builder()
                         .set_max_row_group_row_count(Some(32))
                         .build(),
                     schema,
@@ -242,7 +251,7 @@ impl Fixture {
                 .build(output)
                 .await
                 .unwrap();
-                writer.write(batch).await.unwrap();
+                writer.write(&iceberg_batch).await.unwrap();
                 writer.close().await.unwrap()
             }
             DataFileFormat::Vortex => {
@@ -250,7 +259,7 @@ impl Fixture {
                     .build(output)
                     .await
                     .unwrap();
-                writer.write(batch).await.unwrap();
+                writer.write(&iceberg_batch).await.unwrap();
                 writer.close().await.unwrap()
             }
             _ => unreachable!(),
@@ -671,17 +680,17 @@ async fn parquet_page_indexes_preserve_unprojected_filters_and_deletes() {
         ));
         columns[1] = Arc::new(StringArray::from_iter_values((0..TOTAL_ROWS).map(label)));
         let batch = RecordBatch::try_new(fixture.batch.schema(), columns).unwrap();
-        let properties = WriterProperties::builder()
-            .set_compression(Compression::UNCOMPRESSED)
+        let properties = IcebergWriterProperties::builder()
+            .set_compression(IcebergCompression::UNCOMPRESSED)
             .set_dictionary_enabled(false)
             .set_max_row_group_row_count(Some(ROW_GROUP_ROWS))
             .set_data_page_row_count_limit(128)
             .set_data_page_size_limit(4096)
             .set_write_batch_size(128)
             .set_statistics_enabled(if write_indexes {
-                EnabledStatistics::Page
+                IcebergEnabledStatistics::Page
             } else {
-                EnabledStatistics::Chunk
+                IcebergEnabledStatistics::Chunk
             })
             .set_offset_index_disabled(!write_indexes)
             .build();
@@ -698,7 +707,10 @@ async fn parquet_page_indexes_preserve_unprojected_filters_and_deletes() {
         )
         .await
         .unwrap();
-        writer.write(&batch).await.unwrap();
+        writer
+            .write(&batch_for_iceberg(&batch).unwrap())
+            .await
+            .unwrap();
         let files = writer
             .close()
             .await
@@ -757,13 +769,14 @@ async fn parquet_page_indexes_preserve_unprojected_filters_and_deletes() {
         let plan = provider
             .scan(
                 &context.state(),
-                Some(&vec![1]),
+                Some(&[1]),
                 &[col("id").gt_eq(lit(28_i64)).and(col("id").lt(lit(37_i64)))],
                 None,
             )
             .await
             .unwrap();
-        assert_eq!(plan.output_partitioning().partition_count(), 4);
+        assert_eq!(reader.metadata().num_row_groups(), 2);
+        assert_eq!(plan.output_partitioning().partition_count(), 2);
         let batches = collect(plan, context.task_ctx()).await.unwrap();
         let mut labels = batches
             .iter()
@@ -812,9 +825,9 @@ async fn multiple_files_distribute_rows_across_independent_consumers() {
             ))
             .unwrap();
         let mut writer = ParquetWriterBuilder::new(
-            WriterProperties::builder()
-                .set_compression(Compression::UNCOMPRESSED)
-                .set_statistics_enabled(EnabledStatistics::None)
+            IcebergWriterProperties::builder()
+                .set_compression(IcebergCompression::UNCOMPRESSED)
+                .set_statistics_enabled(IcebergEnabledStatistics::None)
                 .set_max_row_group_row_count(Some(ROW_GROUP_ROWS))
                 .build(),
             fixture.table.metadata().current_schema().clone(),
@@ -822,7 +835,10 @@ async fn multiple_files_distribute_rows_across_independent_consumers() {
         .build(output)
         .await
         .unwrap();
-        writer.write(&batch).await.unwrap();
+        writer
+            .write(&batch_for_iceberg(&batch).unwrap())
+            .await
+            .unwrap();
         files.extend(writer.close().await.unwrap().into_iter().map(|mut file| {
             file.content(DataContentType::Data)
                 .partition(Struct::empty())
@@ -1250,7 +1266,7 @@ async fn footer_bounds_reach_projected_provider_statistics() {
     let context = fixture.context();
     let provider = IcebergTableProvider::try_new(fixture.table).unwrap();
     let plan = provider
-        .scan(&context.state(), Some(&vec![1, 0]), &[], None)
+        .scan(&context.state(), Some(&[1, 0]), &[], None)
         .await
         .unwrap();
     let statistics = plan
@@ -1514,7 +1530,7 @@ async fn vortex_single_file_scans_preserve_parallel_rows_and_projections() {
     assert_eq!(ids, (0..ROWS).collect::<Vec<_>>());
 
     let plan = provider
-        .scan(&context.state(), Some(&vec![]), &[], None)
+        .scan(&context.state(), Some(&[]), &[], None)
         .await
         .unwrap();
     let batches = collect(plan, context.task_ctx()).await.unwrap();
@@ -1544,7 +1560,7 @@ async fn mixed_data_formats_preserve_rows_filters_and_deletes() {
         let provider = Arc::new(IcebergTableProvider::try_new(fixture.table.clone()).unwrap());
         let context = fixture.context();
         let plan = provider
-            .scan(&context.state(), Some(&vec![0]), &[], None)
+            .scan(&context.state(), Some(&[0]), &[], None)
             .await
             .unwrap();
         assert_eq!(plan.output_partitioning().partition_count(), 4);
@@ -2070,7 +2086,6 @@ async fn native_vortex_limits_keep_parallel_scan_outputs_after_optimization() {
                 source.try_pushdown_sort(&order).unwrap(),
                 SortOrderPushdownResult::Unsupported
             ));
-            assert!(source.with_preserve_order(true).is_none());
             // Physical filter rewrites must also retain the wrapper, rather than handing the
             // optimizer an unguarded official source that can later collapse to one partition.
             let filter: Arc<dyn PhysicalExpr> = Arc::new(BinaryExpr::new(
@@ -2375,7 +2390,7 @@ async fn exact_filters_enforce_required_decimal_date_predicates_without_residual
             let direct = provider
                 .scan(
                     &context.state(),
-                    Some(&vec![0]),
+                    Some(&[0]),
                     std::slice::from_ref(&filter),
                     None,
                 )
@@ -2850,7 +2865,7 @@ async fn parquet_dynamic_hints_preserve_signed_zero_equality() {
     let context = fixture.context();
     let provider = IcebergTableProvider::try_new(fixture.table).unwrap();
     let plan = provider
-        .scan(&context.state(), Some(&vec![4]), &[], None)
+        .scan(&context.state(), Some(&[4]), &[], None)
         .await
         .unwrap();
     let key: Arc<dyn PhysicalExpr> = Arc::new(Column::new("special_float", 0));
@@ -2922,7 +2937,7 @@ async fn parquet_initial_defaults_keep_decimal_and_uuid_values() {
     let context = fixture.context();
     let provider = IcebergTableProvider::try_new(fixture.table).unwrap();
     let plan = provider
-        .scan(&context.state(), Some(&vec![6, 7]), &[], None)
+        .scan(&context.state(), Some(&[6, 7]), &[], None)
         .await
         .unwrap();
     let batches = collect(plan, context.task_ctx()).await.unwrap();

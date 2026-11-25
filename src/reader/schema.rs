@@ -23,7 +23,6 @@ use std::sync::Arc;
 use datafusion::arrow::datatypes::{
     DataType, Field, FieldRef, Fields, Schema as ArrowSchema, SchemaRef as ArrowSchemaRef,
 };
-use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::scan::FileScanTask;
 use iceberg::spec::{
     Literal, MappedField, NestedFieldRef, PrimitiveLiteral, Schema, SchemaRef, StructType,
@@ -38,6 +37,7 @@ use vortex::scalar::{DecimalValue, Scalar};
 use vortex::session::VortexSession;
 
 use super::{nested, to_iceberg_error};
+use crate::arrow::schema_to_arrow_schema;
 
 pub(super) fn file_schema(arrow: ArrowSchemaRef, task: &FileScanTask) -> Result<ArrowSchemaRef> {
     if arrow

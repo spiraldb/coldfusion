@@ -24,7 +24,6 @@ use std::sync::Arc;
 use datafusion::arrow::datatypes::SchemaRef;
 use futures::FutureExt;
 use futures::future::BoxFuture;
-use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::io::{FileIO, FileRead};
 use iceberg::spec::{DataFileFormat, Schema};
 use iceberg::{Error, ErrorKind, Result, Runtime};
@@ -40,11 +39,13 @@ use vortex::layout::LayoutReaderRef;
 use vortex::layout::scan::split_by::SplitBy;
 use vortex::scan::DataSourceRef;
 use vortex::session::VortexSession;
+use vortex_parquet::ParquetFormat;
 use vortex_parquet::file::FileHandle;
 use vortex_parquet::options::ReaderOptions;
-use vortex_parquet::{OpenedParquetFile, ParquetFormat};
 
+use super::parquet::ParquetFile;
 use super::to_iceberg_error;
+use crate::arrow::schema_to_arrow_schema;
 
 #[derive(Clone)]
 pub(crate) struct OpenedFile {
@@ -57,7 +58,7 @@ pub(crate) struct OpenedFile {
 #[derive(Clone)]
 enum OpenedFormat {
     Vortex(Arc<VortexFile>),
-    Parquet(OpenedParquetFile),
+    Parquet(Arc<ParquetFile>),
 }
 impl OpenedFile {
     pub(super) fn scan_splits(&self) -> SplitBy {
@@ -106,8 +107,7 @@ impl FileCache {
             io,
             runtime,
             session,
-            parquet: ParquetFormat::new()
-                .with_options(ReaderOptions::from_env().with_materialized_projections()),
+            parquet: ParquetFormat::new().with_options(ReaderOptions::from_env()),
             files: Cache::new(128),
         })
     }
@@ -148,15 +148,17 @@ impl FileCache {
                         });
                         let opened = match format {
                             DataFileFormat::Parquet => {
-                                let file = parquet
-                                    .open_file(FileHandle::new(read, size, session.clone()))
-                                    .await
-                                    .map_err(to_iceberg_error)?;
+                                let file = ParquetFile::open(
+                                    &parquet,
+                                    FileHandle::new(read, size, session.clone()),
+                                )
+                                .await
+                                .map_err(to_iceberg_error)?;
                                 OpenedFile {
-                                    schema: file.arrow_schema().clone(),
+                                    schema: file.schema.clone(),
                                     reader: file.reader.clone(),
-                                    source: file.data_source(session).map_err(to_iceberg_error)?,
-                                    format: OpenedFormat::Parquet(file),
+                                    source: file.source.clone(),
+                                    format: OpenedFormat::Parquet(Arc::new(file)),
                                 }
                             }
                             DataFileFormat::Vortex => {
