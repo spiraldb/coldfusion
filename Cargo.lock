@@ -1334,7 +1334,7 @@ dependencies = [
  "futures",
  "iceberg",
  "moka",
- "parquet 58.4.0",
+ "parquet 58.4.2",
  "parquet 59.3.2",
  "parquet 60.1.0",
  "serde_json",
@@ -3820,9 +3820,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "ordered-float"
-version = "2.10.1"
+version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
+checksum = "f1e1c390732d15f1d48471625cd92d154e66db2c56645e29a9cd26f4699f72dc"
 dependencies = [
  "num-traits",
 ]
@@ -3913,9 +3913,9 @@ dependencies = [
 
 [[package]]
 name = "parquet"
-version = "58.4.0"
+version = "58.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d298093b2dec60289dce0684c986d0f7679e9dd15771c2c65406e1aaf604a704"
+checksum = "22a6d70bbb0492cb52202f786ef0435d763dbaa577d7658db929321cec7930b3"
 dependencies = [
  "ahash",
  "arrow-array 58.4.2",
@@ -5121,13 +5121,14 @@ dependencies = [
 
 [[package]]
 name = "thrift"
-version = "0.17.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e54bc85fc7faa8bc175c4bab5b92ba8d9a3ce893d0e9f42cc455c8ab16a9e09"
+checksum = "1f650151e44bb59950b3adf32de0064813d1148f34f4884b7f5b539f29596859"
 dependencies = [
  "byteorder",
  "integer-encoding",
- "ordered-float 2.10.1",
+ "ordered-float 3.9.2",
+ "uuid",
 ]
 
 [[package]]
@@ -6620,7 +6621,7 @@ dependencies = [
 [[package]]
 name = "vortex-parquet"
 version = "0.1.0"
-source = "git+https://github.com/spiraldb/vortex-parquet?rev=42fa885b627a54972a79f58d5869b1aad8308d40#42fa885b627a54972a79f58d5869b1aad8308d40"
+source = "git+https://github.com/spiraldb/vortex-parquet?rev=b7726987009c498dfa5763f41954c758de1ccab6#b7726987009c498dfa5763f41954c758de1ccab6"
 dependencies = [
  "arrow-array 58.4.2",
  "arrow-array 60.1.0",
@@ -6632,7 +6633,7 @@ dependencies = [
  "futures",
  "memchr",
  "parking_lot 0.12.5",
- "parquet 58.4.0",
+ "parquet 58.4.2",
  "simdutf8",
  "thrift",
  "vortex 0.1.0",
