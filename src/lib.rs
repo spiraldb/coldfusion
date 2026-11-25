@@ -17,6 +17,7 @@
 
 //! Parallel Parquet and Vortex scans of Iceberg snapshots in DataFusion.
 
+mod arrow;
 mod predicate;
 mod reader;
 
@@ -26,7 +27,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::datatypes::{DataType, Field, Fields, Schema, SchemaRef};
 use datafusion::catalog::{Session, TableProvider};
 use datafusion::common::stats::Precision;
 use datafusion::common::{DataFusionError, Result, Statistics};
@@ -35,11 +36,11 @@ use datafusion::physical_plan::ExecutionPlan;
 /// Iceberg APIs from the revision used by this provider.
 pub use iceberg;
 use iceberg::Runtime;
-use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::table::Table;
 use reader::FileCache;
 use tokio::sync::OnceCell;
-use vortex_parquet::view_typed_schema;
+
+use crate::arrow::schema_to_arrow_schema;
 
 /// Exposes an immutable Iceberg snapshot as parallel Parquet and Vortex scans.
 ///
@@ -52,6 +53,32 @@ pub struct IcebergTableProvider {
     reader_runtime: Option<Runtime>,
     exact_filter_pushdown: bool,
     exact_filter_columns: HashSet<String>,
+}
+
+fn view_typed_schema(schema: &Schema) -> Schema {
+    let fields: Fields = schema
+        .fields()
+        .iter()
+        .map(|field| Arc::new(view_typed_field(field)))
+        .collect();
+    Schema::new_with_metadata(fields, schema.metadata().clone())
+}
+
+fn view_typed_field(field: &Field) -> Field {
+    let data_type = match field.data_type() {
+        DataType::Utf8 | DataType::LargeUtf8 => DataType::Utf8View,
+        DataType::Binary | DataType::LargeBinary => DataType::BinaryView,
+        DataType::Struct(fields) => DataType::Struct(
+            fields
+                .iter()
+                .map(|field| Arc::new(view_typed_field(field)))
+                .collect(),
+        ),
+        DataType::List(field) => DataType::List(Arc::new(view_typed_field(field))),
+        DataType::LargeList(field) => DataType::LargeList(Arc::new(view_typed_field(field))),
+        other => other.clone(),
+    };
+    field.clone().with_data_type(data_type)
 }
 
 impl IcebergTableProvider {
@@ -127,7 +154,7 @@ impl TableProvider for IcebergTableProvider {
     async fn scan(
         &self,
         state: &dyn Session,
-        projection: Option<&Vec<usize>>,
+        projection: Option<&[usize]>,
         filters: &[Expr],
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {

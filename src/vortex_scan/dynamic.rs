@@ -28,9 +28,10 @@ use datafusion::physical_expr_common::physical_expr::{
 };
 use vortex::dtype::{DType, Nullability};
 use vortex::error::VortexResult;
-use vortex::expr::transform::{find_between, replace};
+use vortex::expr::transform::replace;
 use vortex::expr::{BoundExpression, Expression, dynamic_expression, get_item, lit, pack, root};
-use vortex::scalar_fn::fns::dynamic_expression::{DynamicExpressionSource, input_field_name};
+use vortex::functions::between::find_between;
+use vortex::functions::dynamic_expression::{DynamicExpressionSource, input_field_name};
 
 use super::convert::ScanExpressionConverter;
 use super::df_scalar::Mode;

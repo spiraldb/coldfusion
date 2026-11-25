@@ -31,7 +31,6 @@ use datafusion::arrow::compute::cast;
 use datafusion::arrow::datatypes::{DataType, Field, FieldRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::TryStreamExt;
-use iceberg::arrow::schema_to_arrow_schema;
 use iceberg::scan::FileScanTask;
 use iceberg::spec::{DataContentType, Schema};
 use iceberg::{Error, ErrorKind, Result};
@@ -49,6 +48,7 @@ use vortex::scan::selection::Selection;
 use super::files::FileCache;
 use super::schema::{field_id, field_path, file_schema};
 use super::to_iceberg_error;
+use crate::arrow::schema_to_arrow_schema;
 
 pub(super) struct Deletes {
     pub selection: Selection,
@@ -138,7 +138,8 @@ pub(super) async fn load(
             keys.iter()
                 .map(|f| SortField::new(f.data_type().clone()))
                 .collect(),
-        )?;
+        )
+        .map_err(to_iceberg_error)?;
         let mut rows = HashSet::new();
         while let Some(array) = batches.try_next().await? {
             let batch = array
@@ -153,7 +154,7 @@ pub(super) async fn load(
                     let paths = batch.column_by_name("file_path").ok_or_else(|| {
                         Error::new(ErrorKind::DataInvalid, "Position deletes lack file_path")
                     })?;
-                    let paths = cast(paths, &DataType::Utf8)?;
+                    let paths = cast(paths, &DataType::Utf8).map_err(to_iceberg_error)?;
                     let paths = paths.as_any().downcast_ref::<StringArray>().unwrap();
                     let ids = batch
                         .column_by_name("pos")
@@ -209,10 +210,12 @@ pub(super) async fn load(
                                     })?;
                                 array = parent.flatten().1.swap_remove(index);
                             }
-                            Ok(cast(&array, key.data_type())?)
+                            cast(&array, key.data_type()).map_err(to_iceberg_error)
                         })
                         .collect::<Result<Vec<_>>>()?;
-                    let encoded = converter.convert_columns(&canonical_keys(columns))?;
+                    let encoded = converter
+                        .convert_columns(&canonical_keys(columns))
+                        .map_err(to_iceberg_error)?;
                     rows.extend(encoded.iter().map(|row| row.as_ref().to_vec()));
                 }
                 _ => return Err(Error::new(ErrorKind::DataInvalid, "Not a delete file")),

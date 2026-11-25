@@ -19,7 +19,7 @@
 name = "coldfusion"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.100"
 license = "Apache-2.0"
 repository = "https://github.com/spiraldb/coldfusion"
 description = "Parallel Iceberg table provider for DataFusion with Parquet and Vortex readers"
@@ -38,23 +38,29 @@ include = [
 ]
 
 [dependencies]
-arrow-row = "59.3.2"
+arrow-row = "60.1.0"
+arrow-schema = "=60.1.0"
+arrow-schema-iceberg = { package = "arrow-schema", version = "59.3.2", features = ["ffi"] }
+arrow-schema-reader = { package = "arrow-schema", version = "58.4", features = ["ffi"] }
 async-trait = "0.1.89"
-datafusion = { version = "=55.2.0", default-features = false, features = ["parquet"] }
+datafusion = { version = "=56.0.0", default-features = false, features = ["parquet"] }
 futures = "0.3"
 iceberg = { git = "https://github.com/spiraldb/iceberg-rust", rev = "a24f97231aa263bcc8f62b3ee07b32a1055cbabb", default-features = false }
 moka = { version = "0.12", features = ["future"] }
-parquet = "=59.3.2"
+parquet = "=60.1.0"
+parquet-reader = { package = "parquet", version = "=58.4.0", default-features = false, features = ["arrow"] }
 serde_json = "1"
 tokio = { version = "1.47", default-features = false, features = ["rt-multi-thread", "sync"] }
-vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", features = ["tokio"] }
-vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "32f0a47ab62157a635203b5e885740295ff86c6a", default-features = false }
-vortex-parquet = { git = "https://github.com/spiraldb/vortex-parquet", rev = "b8189efb125fc6b60fa767265cc41d7ef91233e9" }
+vortex = { git = "https://github.com/vortex-data/vortex.git", rev = "d9d49bba0f7315904fd86870d7397f13b187a8a2", features = ["tokio"] }
+vortex-datafusion = { git = "https://github.com/vortex-data/vortex.git", rev = "d9d49bba0f7315904fd86870d7397f13b187a8a2", default-features = false }
+vortex-parquet = { git = "https://github.com/spiraldb/vortex-parquet", rev = "42fa885b627a54972a79f58d5869b1aad8308d40" }
 
 [dev-dependencies]
+arrow-array-iceberg = { package = "arrow-array", version = "59.3.2", features = ["ffi"] }
+parquet-iceberg = { package = "parquet", version = "=59.3.2", default-features = false, features = ["arrow"] }
 # Only the Iceberg writer fixture uses Iceberg main's Vortex session type.
 iceberg-vortex = { package = "vortex", version = "=0.93.0", features = ["tokio"] }
-datafusion = { version = "=55.2.0", default-features = false, features = ["sql"] }
+datafusion = { version = "=56.0.0", default-features = false, features = ["sql"] }
 tempfile = "3.18"
 tokio = { version = "1.47", default-features = false, features = ["macros"] }
 
